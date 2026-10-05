@@ -11,6 +11,7 @@ import { AnalyticsTab } from './components/AnalyticsTab';
 import { MorningReportModal } from './components/MorningReportModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AuthModal } from './components/AuthModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { ActiveTab } from './types';
 import { Cloud, X } from 'lucide-react';
 
@@ -89,6 +90,9 @@ function MainApp() {
 
       {/* Sign-In Authentication Modal & Diagnostics */}
       <AuthModal />
+
+      {/* Real-time Offline & Sync Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }

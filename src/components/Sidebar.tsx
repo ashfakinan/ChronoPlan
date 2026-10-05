@@ -20,6 +20,7 @@ import { NoteTag, ImportantNote, FixedSchedule } from '../types';
 import { formatShortDate } from '../utils/dateUtils';
 import { NoteModal } from './NoteModal';
 import { ScheduleModal } from './ScheduleModal';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface SidebarProps {
   isOpenOnMobile?: boolean;
@@ -552,6 +553,11 @@ export function Sidebar({ isOpenOnMobile, onCloseMobile }: SidebarProps) {
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Install PWA Prompt in Drawer */}
+            <div className="p-3 border-b border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec]/60 dark:bg-[#22242b]/60">
+              <PWAInstallButton variant="drawer" />
             </div>
 
             {content}

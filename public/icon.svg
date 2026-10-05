@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Base App Background with rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  <rect x="8" y="8" width="496" height="496" rx="120" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="4" />
+
+  <!-- Inner Canvas Sheet -->
+  <g filter="url(#shadow)">
+    <rect x="76" y="76" width="360" height="360" rx="36" fill="#f8f6f1" />
+  </g>
+
+  <!-- Top Header Bar of Planner -->
+  <path d="M 76 112 Q 76 76 112 76 L 400 76 Q 436 76 436 112 L 436 148 L 76 148 Z" fill="url(#blueGrad)" />
+
+  <!-- Rings / Binder clips -->
+  <rect x="140" y="56" width="20" height="40" rx="10" fill="#cbd5e1" stroke="#334155" stroke-width="4" />
+  <rect x="246" y="56" width="20" height="40" rx="10" fill="#cbd5e1" stroke="#334155" stroke-width="4" />
+  <rect x="352" y="56" width="20" height="40" rx="10" fill="#cbd5e1" stroke="#334155" stroke-width="4" />
+
+  <!-- Header Text / Dots -->
+  <circle cx="116" cy="112" r="8" fill="#ffffff" fill-opacity="0.8" />
+  <rect x="138" y="106" width="120" height="12" rx="6" fill="#ffffff" fill-opacity="0.9" />
+
+  <!-- Planner Grid Columns & Rows -->
+  <!-- Left Day Column -->
+  <rect x="100" y="172" width="76" height="44" rx="8" fill="#e2e8f0" />
+  <rect x="110" y="184" width="44" height="8" rx="4" fill="#64748b" />
+  <rect x="110" y="198" width="28" height="6" rx="3" fill="#94a3b8" />
+
+  <rect x="100" y="228" width="76" height="44" rx="8" fill="#3b82f6" fill-opacity="0.15" stroke="#3b82f6" stroke-width="2" />
+  <rect x="110" y="240" width="48" height="8" rx="4" fill="#2563eb" />
+  <rect x="110" y="254" width="32" height="6" rx="3" fill="#3b82f6" />
+
+  <rect x="100" y="284" width="76" height="44" rx="8" fill="#e2e8f0" />
+  <rect x="110" y="296" width="42" height="8" rx="4" fill="#64748b" />
+  <rect x="110" y="310" width="26" height="6" rx="3" fill="#94a3b8" />
+
+  <rect x="100" y="340" width="76" height="44" rx="8" fill="#e2e8f0" />
+  <rect x="110" y="352" width="46" height="8" rx="4" fill="#64748b" />
+  <rect x="110" y="366" width="30" height="6" rx="3" fill="#94a3b8" />
+
+  <!-- Grid Day-Part Cells -->
+  <!-- Row 1: Morning Tasks -->
+  <rect x="190" y="172" width="108" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="190" y="172" width="4" height="44" rx="2" fill="#10b981" />
+  <circle cx="208" cy="194" r="7" fill="none" stroke="#10b981" stroke-width="2.5" />
+  <path d="M 205 194 L 207 196 L 212 191" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="222" y="186" width="64" height="7" rx="3.5" fill="#334155" />
+  <rect x="222" y="197" width="42" height="5" rx="2.5" fill="#94a3b8" />
+
+  <rect x="310" y="172" width="102" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="310" y="172" width="4" height="44" rx="2" fill="#f59e0b" />
+  <circle cx="328" cy="194" r="7" fill="none" stroke="#94a3b8" stroke-width="2" />
+  <rect x="342" y="186" width="58" height="7" rx="3.5" fill="#334155" />
+  <rect x="342" y="197" width="36" height="5" rx="2.5" fill="#94a3b8" />
+
+  <!-- Row 2: Today Tasks (Highlighted) -->
+  <rect x="190" y="228" width="108" height="44" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2" />
+  <rect x="190" y="228" width="5" height="44" rx="2" fill="#3b82f6" />
+  <circle cx="208" cy="250" r="7" fill="none" stroke="#3b82f6" stroke-width="2.5" />
+  <path d="M 205 250 L 207 252 L 212 247" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="222" y="242" width="62" height="7" rx="3.5" fill="#1e3a8a" />
+  <rect x="222" y="253" width="48" height="5" rx="2.5" fill="#60a5fa" />
+
+  <rect x="310" y="228" width="102" height="44" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2" />
+  <rect x="310" y="228" width="5" height="44" rx="2" fill="#8b5cf6" />
+  <circle cx="328" cy="250" r="7" fill="none" stroke="#8b5cf6" stroke-width="2.5" />
+  <rect x="342" y="242" width="56" height="7" rx="3.5" fill="#1e3a8a" />
+  <rect x="342" y="253" width="38" height="5" rx="2.5" fill="#a78bfa" />
+
+  <!-- Row 3 -->
+  <rect x="190" y="284" width="108" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="190" y="284" width="4" height="44" rx="2" fill="#ec4899" />
+  <circle cx="208" cy="306" r="7" fill="none" stroke="#94a3b8" stroke-width="2" />
+  <rect x="222" y="298" width="60" height="7" rx="3.5" fill="#334155" />
+  <rect x="222" y="309" width="40" height="5" rx="2.5" fill="#94a3b8" />
+
+  <rect x="310" y="284" width="102" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="310" y="284" width="4" height="44" rx="2" fill="#10b981" />
+  <circle cx="328" cy="306" r="7" fill="none" stroke="#10b981" stroke-width="2.5" />
+  <path d="M 325 306 L 327 308 L 332 303" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="342" y="298" width="54" height="7" rx="3.5" fill="#334155" />
+
+  <!-- Row 4 -->
+  <rect x="190" y="340" width="108" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="190" y="340" width="4" height="44" rx="2" fill="#3b82f6" />
+  <circle cx="208" cy="362" r="7" fill="none" stroke="#94a3b8" stroke-width="2" />
+  <rect x="222" y="354" width="58" height="7" rx="3.5" fill="#334155" />
+
+  <rect x="310" y="340" width="102" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="310" y="340" width="4" height="44" rx="2" fill="#f59e0b" />
+  <circle cx="328" cy="362" r="7" fill="none" stroke="#94a3b8" stroke-width="2" />
+  <rect x="342" y="354" width="52" height="7" rx="3.5" fill="#334155" />
+
+  <!-- Floating Floating Sync Orb Badge in Bottom-Right -->
+  <g filter="url(#shadow)">
+    <circle cx="410" cy="410" r="46" fill="url(#blueGrad)" />
+    <!-- Clock Hands / Sync Check in Orb -->
+    <circle cx="410" cy="410" r="34" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.9" />
+    <polyline points="410,388 410,410 424,418" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+</svg>

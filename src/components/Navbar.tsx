@@ -19,6 +19,7 @@ import { usePlanner } from '../context/PlannerContext';
 import { ActiveTab } from '../types';
 import { getTodayISO } from '../utils/dateUtils';
 import { PlannerModal } from './PlannerModal';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -224,6 +225,9 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
             <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span className="hidden sm:inline">Daily Review</span>
           </button>
+
+          {/* PWA Install Button */}
+          <PWAInstallButton variant="navbar" />
 
           {/* Theme toggle */}
           <button
