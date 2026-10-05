@@ -3,10 +3,11 @@ import {
   X,
   ExternalLink,
   AlertCircle,
-  ArrowRight,
-  ShieldCheck,
+  Copy,
+  Check,
   RefreshCw,
   Layers,
+  ArrowUpRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -18,11 +19,17 @@ export function AuthModal() {
     clearAuthError,
     signInWithGoogle,
     signInWithGoogleRedirectFlow,
+    signInAsGuest,
   } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   if (!isAuthModalOpen) return null;
+
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'chrono-plan-alpha.vercel.app';
+  const projectId = 'polished-nature-w7c1c';
+  const firebaseSettingsUrl = `https://console.firebase.google.com/project/${projectId}/authentication/settings`;
 
   const handlePopupSignIn = async () => {
     setIsLoading(true);
@@ -47,6 +54,27 @@ export function AuthModal() {
     }
   };
 
+  const handleGuestSignIn = async () => {
+    setIsLoading(true);
+    try {
+      await signInAsGuest();
+      setIsAuthModalOpen(false);
+    } catch {
+      // If guest auth error, fallback to closing modal for local storage mode
+      setIsAuthModalOpen(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCopyDomain = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(currentHost);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2000);
+    }
+  };
+
   const handleOpenNewTab = () => {
     if (typeof window !== 'undefined') {
       window.open(window.location.href, '_blank');
@@ -54,10 +82,11 @@ export function AuthModal() {
   };
 
   const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+  const isUnauthorizedDomain = authError?.code === 'auth/unauthorized-domain' || currentHost.includes('vercel.app');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-[#fdfcf9] dark:bg-[#1a1b20] border border-[#e5e2da] dark:border-[#292b34] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="bg-[#fdfcf9] dark:bg-[#1a1b20] border border-[#e5e2da] dark:border-[#292b34] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -69,7 +98,7 @@ export function AuthModal() {
                 Sign in to ChronoPlan
               </h2>
               <p className="text-[11px] text-[#606470] dark:text-[#9aa0ae]">
-                Sync your planners and tasks to the cloud
+                Save and sync your custom planners to the cloud
               </p>
             </div>
           </div>
@@ -88,17 +117,78 @@ export function AuthModal() {
 
         {/* Content Body */}
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
-          {/* Error Notice if any */}
-          {authError && (
+          {/* Specific Handling for Unauthorized Domain Error */}
+          {isUnauthorizedDomain ? (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-xs font-bold text-amber-900 dark:text-amber-300">
+                    Domain Authorization Required
+                  </h3>
+                  <p className="text-xs text-[#606470] dark:text-[#9aa0ae] mt-1 leading-relaxed">
+                    Firebase requires new hosting domains to be added to Authorized Domains before Google Sign-In can execute.
+                  </p>
+                </div>
+              </div>
+
+              {/* Domain Box with Copy Button */}
+              <div className="flex items-center justify-between p-2.5 bg-[#fdfcf9] dark:bg-[#1a1b20] border border-amber-500/20 rounded-lg">
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase font-bold text-[#8c909c] tracking-wider">
+                    Domain to authorize
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-[#1f2126] dark:text-[#eceef2] select-all">
+                    {currentHost}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyDomain}
+                  className="px-2.5 py-1 text-xs font-semibold bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] text-[#1f2126] dark:text-[#eceef2] rounded-md transition-colors flex items-center gap-1 min-h-[34px]"
+                >
+                  {copiedDomain ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> Copy
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Steps Guide */}
+              <div className="text-[11px] text-[#606470] dark:text-[#9aa0ae] space-y-1">
+                <p className="font-semibold text-[#1f2126] dark:text-[#eceef2]">How to authorize in 10 seconds:</p>
+                <ol className="list-decimal list-inside space-y-0.5 pl-1">
+                  <li>Click the button below to open Firebase Console Settings.</li>
+                  <li>Scroll to <strong>Authorized domains</strong> and click <strong>Add domain</strong>.</li>
+                  <li>Paste <code className="bg-[#f4f2ec] dark:bg-[#22242b] px-1 py-0.5 rounded text-[10px]">{currentHost}</code> and save.</li>
+                </ol>
+              </div>
+
+              {/* Link to Firebase Console */}
+              <a
+                href={firebaseSettingsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs min-h-[44px]"
+              >
+                <span>Open Firebase Console Settings</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </a>
+            </div>
+          ) : authError ? (
+            /* General Auth Error Display */
             <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-[#1f2126] dark:text-[#eceef2] space-y-2">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <span className="font-semibold text-amber-800 dark:text-amber-300 block">
                     {authError.code === 'auth/popup-blocked'
-                      ? 'Popup Blocked'
-                      : authError.code === 'auth/unauthorized-domain'
-                      ? 'Domain Authorization Required'
+                      ? 'Popup Blocked by Browser'
                       : 'Sign-In Notice'}
                   </span>
                   <p className="mt-0.5 text-[#606470] dark:text-[#9aa0ae] leading-relaxed">
@@ -113,12 +203,12 @@ export function AuthModal() {
                 </div>
               )}
             </div>
-          )}
+          ) : null}
 
           {/* Iframe Notice */}
-          {isIframe && (
+          {isIframe && !isUnauthorizedDomain && (
             <div className="p-3 rounded-xl bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] text-[11px] text-[#606470] dark:text-[#9aa0ae] flex items-center justify-between gap-2">
-              <span>Running inside an embedded frame. If popups are restricted, open in a new tab:</span>
+              <span>Running in an embedded preview frame. If popups are restricted:</span>
               <button
                 type="button"
                 onClick={handleOpenNewTab}
@@ -130,7 +220,7 @@ export function AuthModal() {
           )}
 
           {/* Primary Action: Sign in with Google (Popup) */}
-          <div className="space-y-2.5">
+          <div className="space-y-2.5 pt-1">
             <button
               type="button"
               onClick={handlePopupSignIn}
@@ -168,6 +258,16 @@ export function AuthModal() {
               <RefreshCw className={`w-3.5 h-3.5 text-[#8c909c] ${isLoading ? 'animate-spin' : ''}`} />
               <span>Sign in with Google (Redirect Flow)</span>
             </button>
+
+            {/* Instant Guest Cloud Sync Option */}
+            <button
+              type="button"
+              onClick={handleGuestSignIn}
+              disabled={isLoading}
+              className="w-full py-2.5 px-4 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-800 dark:text-emerald-300 border border-emerald-600/25 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-colors min-h-[44px]"
+            >
+              <span>Instant Cloud Mode (No Domain Setup Needed)</span>
+            </button>
           </div>
 
           <div className="pt-2 text-center">
@@ -179,7 +279,7 @@ export function AuthModal() {
               }}
               className="text-xs text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] py-2 min-h-[44px]"
             >
-              Continue in Local Preview Mode →
+              Continue in Local Offline Mode (Saved to Browser) →
             </button>
           </div>
         </div>

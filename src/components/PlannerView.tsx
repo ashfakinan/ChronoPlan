@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Circle,
   GripVertical,
-  Filter,
   Search,
   Settings,
   Layers,
@@ -13,6 +12,8 @@ import {
   LayoutGrid,
   CalendarDays,
   MoveRight,
+  ArrowUpDown,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import {
@@ -43,8 +44,11 @@ export function PlannerView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
 
-  // Mobile navigation mode: 'day-focus' or 'matrix'
-  const [mobileViewMode, setMobileViewMode] = useState<'day-focus' | 'matrix'>('day-focus');
+  // Matrix orientation: 'days-on-left' (default requested by user: Days on left vertically, Day-parts at top)
+  const [matrixOrientation, setMatrixOrientation] = useState<'days-on-left' | 'days-on-top'>('days-on-left');
+
+  // Mobile navigation mode: 'matrix' (Days on Left) or 'day-focus'
+  const [mobileViewMode, setMobileViewMode] = useState<'matrix' | 'day-focus'>('matrix');
   const [mobileSelectedDate, setMobileSelectedDate] = useState<string>('');
 
   // Modals state
@@ -72,10 +76,9 @@ export function PlannerView() {
   // Set initial mobile selected date
   React.useEffect(() => {
     if (days.length > 0 && !mobileSelectedDate) {
-      // Find today if in range, otherwise first day
-      const today = new Date().toISOString().split('T')[0];
-      if (days.includes(today)) {
-        setMobileSelectedDate(today);
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (days.includes(todayStr)) {
+        setMobileSelectedDate(todayStr);
       } else {
         setMobileSelectedDate(days[0]);
       }
@@ -203,31 +206,61 @@ export function PlannerView() {
           </div>
         </div>
 
-        {/* View Mode Toggle (Mobile / Tablet) & Filters */}
+        {/* View Controls & Filters */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Mobile View Switcher */}
-          <div className="md:hidden flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
+          {/* Orientation Switcher (Days on Left vs Days on Top) */}
+          <div className="hidden lg:flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
             <button
               type="button"
-              onClick={() => setMobileViewMode('day-focus')}
-              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[32px] ${
-                mobileViewMode === 'day-focus'
-                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs'
+              onClick={() => setMatrixOrientation('days-on-left')}
+              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[30px] ${
+                matrixOrientation === 'days-on-left'
+                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
                   : 'text-[#606470] dark:text-[#9aa0ae]'
               }`}
+              title="Days on Left vertically, Day-Parts horizontally at the top"
             >
-              <CalendarDays className="w-3.5 h-3.5" /> Day Focus
+              <ArrowUpDown className="w-3 h-3 text-blue-600" />
+              <span>Days on Left</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setMatrixOrientation('days-on-top')}
+              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[30px] ${
+                matrixOrientation === 'days-on-top'
+                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
+                  : 'text-[#606470] dark:text-[#9aa0ae]'
+              }`}
+              title="Days horizontally at the top, Day-Parts down the side"
+            >
+              <ArrowLeftRight className="w-3 h-3 text-blue-600" />
+              <span>Days on Top</span>
+            </button>
+          </div>
+
+          {/* Mobile View Switcher */}
+          <div className="md:hidden flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
             <button
               type="button"
               onClick={() => setMobileViewMode('matrix')}
               className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[32px] ${
                 mobileViewMode === 'matrix'
-                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs'
+                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
                   : 'text-[#606470] dark:text-[#9aa0ae]'
               }`}
             >
-              <LayoutGrid className="w-3.5 h-3.5" /> Full Grid
+              <LayoutGrid className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> Grid
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileViewMode('day-focus')}
+              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[32px] ${
+                mobileViewMode === 'day-focus'
+                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
+                  : 'text-[#606470] dark:text-[#9aa0ae]'
+              }`}
+            >
+              <CalendarDays className="w-3.5 h-3.5" /> Agenda
             </button>
           </div>
 
@@ -450,194 +483,383 @@ export function PlannerView() {
         </div>
       </div>
 
-      {/* MATRIX GRID VIEW (Desktop standard, or mobile when mobileViewMode === 'matrix') */}
+      {/* MATRIX TABLE VIEW (Days on Left vertically, Day-Parts horizontally at top) */}
       <div className={`flex-1 overflow-auto p-2 sm:p-4 ${mobileViewMode === 'matrix' ? 'block' : 'hidden md:block'}`}>
         <div className="inline-block min-w-full align-top">
-          <div className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-hidden">
-            <table className="w-full border-collapse table-fixed text-left">
-              {/* Header Row: Days across top */}
-              <thead>
-                <tr className="border-b border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b]">
-                  {/* Corner cell */}
-                  <th className="w-36 sm:w-44 p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-r border-[#e5e2da] dark:border-[#292b34] uppercase tracking-wider">
-                    <div className="flex items-center justify-between">
-                      <span>Day-Parts</span>
-                      <span className="text-[10px] text-[#8c909c]">↘ Days</span>
-                    </div>
-                  </th>
-
-                  {/* Day Headers */}
-                  {days.map((dateStr) => {
-                    const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
-                    const doneCount = dayTasks.filter((t) => t.isCompleted).length;
-                    const isCurrent = isToday(dateStr);
-
-                    return (
-                      <th
-                        key={dateStr}
-                        onClick={() => setSelectedDayForDetail(dateStr)}
-                        className={`p-3 border-r border-[#e5e2da] dark:border-[#292b34] cursor-pointer transition-colors group select-none min-w-[160px] ${
-                          isCurrent
-                            ? 'bg-blue-500/10 hover:bg-blue-500/15'
-                            : 'hover:bg-[#eae7df] dark:hover:bg-[#2a2d36]'
-                        }`}
-                        title="Click to view detailed day schedule"
-                      >
+          <div className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-auto max-h-[calc(100vh-12rem)]">
+            <table className="border-collapse table-auto min-w-full text-left">
+              {/* ========================================================= */}
+              {/* DAYS ON LEFT (ROWS), DAY-PARTS AT TOP (COLUMNS)           */}
+              {/* User explicit request: Days name in left side vertically, */}
+              {/* and parts name horizontally at the top!                   */}
+              {/* ========================================================= */}
+              {matrixOrientation === 'days-on-left' ? (
+                <>
+                  {/* Table Header: Day-Parts across the top */}
+                  <thead>
+                    <tr className="border-b border-[#e5e2da] dark:border-[#292b34]">
+                      {/* Top-left Corner Cell: Sticky in both horizontal & vertical scroll */}
+                      <th className="sticky top-0 left-0 z-30 w-44 min-w-[170px] max-w-[170px] p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] uppercase tracking-wider shadow-[2px_2px_4px_rgba(0,0,0,0.04)]">
                         <div className="flex items-center justify-between">
-                          <span
-                            className={`text-xs font-bold uppercase tracking-wider ${
-                              isCurrent ? 'text-blue-700 dark:text-blue-400' : 'text-[#1f2126] dark:text-[#eceef2]'
-                            }`}
-                          >
-                            {getWeekdayName(dateStr)}
-                          </span>
-
-                          {isCurrent && (
-                            <span className="px-1.5 py-0.2 text-[10px] font-bold bg-blue-600 text-white rounded-md">
-                              Today
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-between mt-1 text-[11px] text-[#606470] dark:text-[#9aa0ae]">
-                          <span className="font-semibold text-[#1f2126] dark:text-[#eceef2]">
-                            {formatShortDate(dateStr)}
-                          </span>
-                          <span className="flex items-center gap-0.5 group-hover:text-blue-600">
-                            {doneCount}/{dayTasks.length}
-                            <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </span>
+                          <span className="font-bold text-[#1f2126] dark:text-[#eceef2]">Days</span>
+                          <span className="text-[10px] text-[#8c909c] font-normal">Parts →</span>
                         </div>
                       </th>
-                    );
-                  })}
-                </tr>
-              </thead>
 
-              {/* Body: Day-parts down the side */}
-              <tbody className="divide-y divide-[#e5e2da] dark:border-[#292b34]">
-                {dayParts.map((dayPart) => (
-                  <tr key={dayPart} className="group">
-                    {/* Day-Part Row Header */}
-                    <td className="p-3 border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f8f6f1] dark:bg-[#16171b] align-top">
-                      <div className="sticky left-0">
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-[#1f2126] dark:text-[#eceef2]">
-                          <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                          <span>{dayPart}</span>
-                        </div>
-                        <p className="text-[10px] text-[#8c909c] mt-1">
-                          {filteredTasks.filter((t) => t.dayPart === dayPart).length} tasks
-                        </p>
-                      </div>
-                    </td>
+                      {/* Day-Part Column Headers: Sticky top when scrolling vertically */}
+                      {dayParts.map((dayPart) => {
+                        const totalPartTasks = filteredTasks.filter((t) => t.dayPart === dayPart).length;
+                        return (
+                          <th
+                            key={dayPart}
+                            className="sticky top-0 z-20 w-64 min-w-[210px] p-3 border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] select-none shadow-[0_2px_4px_rgba(0,0,0,0.04)]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 font-bold text-xs text-[#1f2126] dark:text-[#eceef2]">
+                                <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                <span>{dayPart}</span>
+                              </div>
+                              <span className="text-[10px] font-semibold text-[#8c909c]">
+                                {totalPartTasks} {totalPartTasks === 1 ? 'task' : 'tasks'}
+                              </span>
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
 
-                    {/* Matrix Cells */}
+                  {/* Table Body: Days down the left side vertically (as rows) */}
+                  <tbody className="divide-y divide-[#e5e2da] dark:divide-[#292b34]">
                     {days.map((dateStr) => {
-                      const cellTasks = filteredTasks.filter(
-                        (t) => t.date === dateStr && t.dayPart === dayPart
-                      );
-                      const isDropTarget =
-                        activeDropCell?.date === dateStr && activeDropCell?.dayPart === dayPart;
+                      const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
+                      const doneCount = dayTasks.filter((t) => t.isCompleted).length;
+                      const isCurrent = isToday(dateStr);
 
                       return (
-                        <td
-                          key={`${dateStr}-${dayPart}`}
-                          onDragOver={(e) => handleDragOver(e, dateStr, dayPart)}
-                          onDragLeave={handleDragLeave}
-                          onDrop={(e) => handleDrop(e, dateStr, dayPart)}
-                          className={`p-2 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[110px] relative ${
-                            isDropTarget
-                              ? 'bg-blue-500/10 ring-2 ring-blue-500/30'
-                              : isToday(dateStr)
-                              ? 'bg-blue-500/5'
-                              : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
-                          }`}
-                        >
-                          {/* Tasks list */}
-                          <div className="space-y-1.5 min-h-[50px]">
-                            {cellTasks.map((task) => {
-                              const subj = getSubject(task.subjectId);
-                              return (
-                                <div
-                                  key={task.id}
-                                  draggable
-                                  onDragStart={(e) => handleDragStart(e, task.id)}
-                                  className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing ${
-                                    task.isCompleted
-                                      ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
-                                      : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
+                        <tr key={dateStr} className="group">
+                          {/* Day Row Header on the Left: Sticky left when scrolling horizontally */}
+                          <td
+                            onClick={() => setSelectedDayForDetail(dateStr)}
+                            className={`sticky left-0 z-10 w-44 min-w-[170px] max-w-[170px] p-3.5 border-r border-[#e5e2da] dark:border-[#292b34] align-top cursor-pointer transition-colors select-none shadow-[2px_0_4px_rgba(0,0,0,0.04)] ${
+                              isCurrent
+                                ? 'bg-[#edf4ff] dark:bg-[#1a2333] hover:bg-[#e2edff] dark:hover:bg-[#202b3f]'
+                                : 'bg-[#f8f6f1] dark:bg-[#16171b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36]'
+                            }`}
+                            title="Click to view full day schedule"
+                          >
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span
+                                  className={`text-xs font-bold uppercase tracking-wider ${
+                                    isCurrent ? 'text-blue-700 dark:text-blue-400' : 'text-[#1f2126] dark:text-[#eceef2]'
                                   }`}
                                 >
-                                  {/* Subject Color Pill */}
-                                  <div
-                                    className="w-1 self-stretch rounded-full shrink-0"
-                                    style={{ backgroundColor: subj?.color || '#3B82F6' }}
-                                  />
+                                  {getWeekdayName(dateStr)}
+                                </span>
 
-                                  {/* Checkbox */}
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleTaskComplete(task.id)}
-                                    className="mt-0.5 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0"
-                                    aria-label="Toggle task"
-                                  >
-                                    {task.isCompleted ? (
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                                    ) : (
-                                      <Circle className="w-3.5 h-3.5" />
-                                    )}
-                                  </button>
+                                {isCurrent && (
+                                  <span className="px-1.5 py-0.2 text-[9px] font-bold bg-blue-600 text-white rounded-md">
+                                    Today
+                                  </span>
+                                )}
+                              </div>
 
-                                  {/* Task title & click to edit */}
-                                  <div
-                                    className="flex-1 min-w-0 cursor-pointer"
-                                    onClick={() => {
-                                      setTaskToEdit(task);
-                                      setIsTaskModalOpen(true);
-                                    }}
-                                  >
-                                    <div
-                                      className={`text-[11px] font-medium leading-snug break-words ${
-                                        task.isCompleted
-                                          ? 'line-through text-[#8c909c]'
-                                          : 'text-[#1f2126] dark:text-[#eceef2]'
-                                      }`}
-                                    >
-                                      {task.title}
-                                    </div>
+                              <div className="flex items-center justify-between mt-1 text-[11px] text-[#606470] dark:text-[#9aa0ae]">
+                                <span className="font-semibold text-[#1f2126] dark:text-[#eceef2]">
+                                  {formatShortDate(dateStr)}
+                                </span>
+                                <span className="flex items-center gap-0.5 group-hover:text-blue-600 font-medium">
+                                  {doneCount}/{dayTasks.length}
+                                  <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </span>
+                              </div>
+                            </div>
+                          </td>
 
-                                    {subj && (
-                                      <div className="flex items-center gap-1 mt-1">
-                                        <span
-                                          className="text-[9px] font-semibold truncate max-w-[100px]"
-                                          style={{ color: subj.color }}
+                          {/* Day-Part Cells in this Day's row */}
+                          {dayParts.map((dayPart) => {
+                            const cellTasks = filteredTasks.filter(
+                              (t) => t.date === dateStr && t.dayPart === dayPart
+                            );
+                            const isDropTarget =
+                              activeDropCell?.date === dateStr && activeDropCell?.dayPart === dayPart;
+
+                            return (
+                              <td
+                                key={`${dateStr}-${dayPart}`}
+                                onDragOver={(e) => handleDragOver(e, dateStr, dayPart)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, dateStr, dayPart)}
+                                className={`w-64 min-w-[210px] p-2.5 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[110px] relative ${
+                                  isDropTarget
+                                    ? 'bg-blue-500/10 ring-2 ring-blue-500/30'
+                                    : isCurrent
+                                    ? 'bg-blue-500/5'
+                                    : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
+                                }`}
+                              >
+                                {/* Tasks list in this cell */}
+                                <div className="space-y-1.5 min-h-[50px]">
+                                  {cellTasks.map((task) => {
+                                    const subj = getSubject(task.subjectId);
+                                    return (
+                                      <div
+                                        key={task.id}
+                                        draggable
+                                        onDragStart={(e) => handleDragStart(e, task.id)}
+                                        className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing ${
+                                          task.isCompleted
+                                            ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
+                                            : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
+                                        }`}
+                                      >
+                                        {/* Subject Color Accent Stripe */}
+                                        <div
+                                          className="w-1 self-stretch rounded-full shrink-0"
+                                          style={{ backgroundColor: subj?.color || '#3B82F6' }}
+                                        />
+
+                                        {/* Checkbox */}
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleTaskComplete(task.id)}
+                                          className="mt-0.5 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0"
+                                          aria-label="Toggle task"
                                         >
-                                          {subj.name}
-                                        </span>
+                                          {task.isCompleted ? (
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                          ) : (
+                                            <Circle className="w-3.5 h-3.5" />
+                                          )}
+                                        </button>
+
+                                        {/* Task title & click to edit */}
+                                        <div
+                                          className="flex-1 min-w-0 cursor-pointer"
+                                          onClick={() => {
+                                            setTaskToEdit(task);
+                                            setIsTaskModalOpen(true);
+                                          }}
+                                        >
+                                          <div
+                                            className={`text-[11px] font-medium leading-snug break-words ${
+                                              task.isCompleted
+                                                ? 'line-through text-[#8c909c]'
+                                                : 'text-[#1f2126] dark:text-[#eceef2]'
+                                            }`}
+                                          >
+                                            {task.title}
+                                          </div>
+
+                                          {subj && (
+                                            <div className="flex items-center gap-1 mt-1">
+                                              <span
+                                                className="text-[9px] font-semibold truncate max-w-[120px]"
+                                                style={{ color: subj.color }}
+                                              >
+                                                {subj.name}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-100 transition-opacity shrink-0" />
                                       </div>
-                                    )}
-                                  </div>
-
-                                  <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-100 transition-opacity shrink-0" />
+                                    );
+                                  })}
                                 </div>
-                              );
-                            })}
-                          </div>
 
-                          {/* Quick Add Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAddTask(dateStr, dayPart)}
-                            className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-70 hover:opacity-100 transition-all min-h-[30px]"
-                          >
-                            <Plus className="w-3 h-3" /> Add
-                          </button>
-                        </td>
+                                {/* Quick Add Button at bottom of cell */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAddTask(dateStr, dayPart)}
+                                  className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-70 hover:opacity-100 transition-all min-h-[30px]"
+                                >
+                                  <Plus className="w-3 h-3" /> Add
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
                       );
                     })}
-                  </tr>
-                ))}
-              </tbody>
+                  </tbody>
+                </>
+              ) : (
+                /* ========================================================= */
+                /* OPTION B: DAYS ON TOP (COLUMNS), DAY-PARTS ON LEFT (ROWS) */
+                /* ========================================================= */
+                <>
+                  <thead>
+                    <tr className="border-b border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b]">
+                      <th className="w-36 sm:w-44 p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-r border-[#e5e2da] dark:border-[#292b34] uppercase tracking-wider">
+                        <div className="flex items-center justify-between">
+                          <span>Day-Parts</span>
+                          <span className="text-[10px] text-[#8c909c]">↘ Days</span>
+                        </div>
+                      </th>
+
+                      {days.map((dateStr) => {
+                        const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
+                        const doneCount = dayTasks.filter((t) => t.isCompleted).length;
+                        const isCurrent = isToday(dateStr);
+
+                        return (
+                          <th
+                            key={dateStr}
+                            onClick={() => setSelectedDayForDetail(dateStr)}
+                            className={`p-3 border-r border-[#e5e2da] dark:border-[#292b34] cursor-pointer transition-colors group select-none min-w-[160px] ${
+                              isCurrent
+                                ? 'bg-blue-500/10 hover:bg-blue-500/15'
+                                : 'hover:bg-[#eae7df] dark:hover:bg-[#2a2d36]'
+                            }`}
+                            title="Click to view detailed day schedule"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={`text-xs font-bold uppercase tracking-wider ${
+                                  isCurrent ? 'text-blue-700 dark:text-blue-400' : 'text-[#1f2126] dark:text-[#eceef2]'
+                                }`}
+                              >
+                                {getWeekdayName(dateStr)}
+                              </span>
+
+                              {isCurrent && (
+                                <span className="px-1.5 py-0.2 text-[10px] font-bold bg-blue-600 text-white rounded-md">
+                                  Today
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between mt-1 text-[11px] text-[#606470] dark:text-[#9aa0ae]">
+                              <span className="font-semibold text-[#1f2126] dark:text-[#eceef2]">
+                                {formatShortDate(dateStr)}
+                              </span>
+                              <span className="flex items-center gap-0.5 group-hover:text-blue-600">
+                                {doneCount}/{dayTasks.length}
+                                <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </span>
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-[#e5e2da] dark:border-[#292b34]">
+                    {dayParts.map((dayPart) => (
+                      <tr key={dayPart} className="group">
+                        <td className="p-3 border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f8f6f1] dark:bg-[#16171b] align-top">
+                          <div className="sticky left-0">
+                            <div className="flex items-center gap-1.5 font-bold text-xs text-[#1f2126] dark:text-[#eceef2]">
+                              <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                              <span>{dayPart}</span>
+                            </div>
+                            <p className="text-[10px] text-[#8c909c] mt-1">
+                              {filteredTasks.filter((t) => t.dayPart === dayPart).length} tasks
+                            </p>
+                          </div>
+                        </td>
+
+                        {days.map((dateStr) => {
+                          const cellTasks = filteredTasks.filter(
+                            (t) => t.date === dateStr && t.dayPart === dayPart
+                          );
+                          const isDropTarget =
+                            activeDropCell?.date === dateStr && activeDropCell?.dayPart === dayPart;
+
+                          return (
+                            <td
+                              key={`${dateStr}-${dayPart}`}
+                              onDragOver={(e) => handleDragOver(e, dateStr, dayPart)}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDrop(e, dateStr, dayPart)}
+                              className={`p-2 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[110px] relative ${
+                                isDropTarget
+                                  ? 'bg-blue-500/10 ring-2 ring-blue-500/30'
+                                  : isToday(dateStr)
+                                  ? 'bg-blue-500/5'
+                                  : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
+                              }`}
+                            >
+                              <div className="space-y-1.5 min-h-[50px]">
+                                {cellTasks.map((task) => {
+                                  const subj = getSubject(task.subjectId);
+                                  return (
+                                    <div
+                                      key={task.id}
+                                      draggable
+                                      onDragStart={(e) => handleDragStart(e, task.id)}
+                                      className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing ${
+                                        task.isCompleted
+                                          ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
+                                          : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
+                                      }`}
+                                    >
+                                      <div
+                                        className="w-1 self-stretch rounded-full shrink-0"
+                                        style={{ backgroundColor: subj?.color || '#3B82F6' }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleTaskComplete(task.id)}
+                                        className="mt-0.5 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0"
+                                        aria-label="Toggle task"
+                                      >
+                                        {task.isCompleted ? (
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                        ) : (
+                                          <Circle className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                      <div
+                                        className="flex-1 min-w-0 cursor-pointer"
+                                        onClick={() => {
+                                          setTaskToEdit(task);
+                                          setIsTaskModalOpen(true);
+                                        }}
+                                      >
+                                        <div
+                                          className={`text-[11px] font-medium leading-snug break-words ${
+                                            task.isCompleted
+                                              ? 'line-through text-[#8c909c]'
+                                              : 'text-[#1f2126] dark:text-[#eceef2]'
+                                          }`}
+                                        >
+                                          {task.title}
+                                        </div>
+                                        {subj && (
+                                          <div className="flex items-center gap-1 mt-1">
+                                            <span
+                                              className="text-[9px] font-semibold truncate max-w-[100px]"
+                                              style={{ color: subj.color }}
+                                            >
+                                              {subj.name}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                      <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-100 transition-opacity shrink-0" />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAddTask(dateStr, dayPart)}
+                                className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-70 hover:opacity-100 transition-all min-h-[30px]"
+                              >
+                                <Plus className="w-3 h-3" /> Add
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </>
+              )}
             </table>
           </div>
         </div>

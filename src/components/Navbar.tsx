@@ -271,15 +271,28 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
                 <div className="absolute right-0 mt-1 w-56 bg-[#fdfcf9] dark:bg-[#1a1b20] border border-[#e5e2da] dark:border-[#292b34] rounded-xl shadow-xl p-3 z-40 space-y-2">
                   <div className="pb-2 border-b border-[#e5e2da] dark:border-[#292b34]">
                     <p className="text-xs font-semibold text-[#1f2126] dark:text-[#eceef2] truncate">
-                      {currentUser.displayName || 'Google Account'}
+                      {currentUser.displayName || (currentUser.isAnonymous ? 'Guest User' : 'Google Account')}
                     </p>
                     <p className="text-[11px] text-[#8c909c] truncate">
-                      {currentUser.email}
+                      {currentUser.isAnonymous ? 'Temporary session' : currentUser.email}
                     </p>
                     <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
                       <Cloud className="w-3 h-3" /> Cloud Synced
                     </div>
                   </div>
+
+                  {currentUser.isAnonymous && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserDropdownOpen(false);
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="w-full px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors flex items-center gap-2 min-h-[38px]"
+                    >
+                      Connect Google Account
+                    </button>
+                  )}
 
                   <button
                     type="button"

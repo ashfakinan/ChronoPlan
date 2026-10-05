@@ -4,6 +4,7 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signInWithRedirect,
+  signInAnonymously,
   getRedirectResult,
   signOut,
 } from 'firebase/auth';
@@ -27,6 +28,7 @@ interface AuthContextType {
   setIsAuthModalOpen: (open: boolean) => void;
   signInWithGoogle: () => Promise<void>;
   signInWithGoogleRedirectFlow: () => Promise<void>;
+  signInAsGuest: () => Promise<void>;
   signOutUser: () => Promise<void>;
   updateUserPreferences: (data: Partial<UserProfile>) => Promise<void>;
   clearAuthError: () => void;
@@ -72,8 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } else {
             const newProfile: UserProfile = {
               id: user.uid,
-              email: user.email || '',
-              displayName: user.displayName || 'Planner User',
+              email: user.email || 'guest@chronoplan.app',
+              displayName: user.displayName || (user.isAnonymous ? 'Guest User' : 'Planner User'),
               photoURL: user.photoURL || '',
               theme: 'light',
               createdAt: new Date().toISOString(),
@@ -87,8 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Fallback to local profile in memory so user session stays functional
           setUserProfile({
             id: user.uid,
-            email: user.email || '',
-            displayName: user.displayName || 'Planner User',
+            email: user.email || 'guest@chronoplan.app',
+            displayName: user.displayName || (user.isAnonymous ? 'Guest User' : 'Planner User'),
             photoURL: user.photoURL || '',
             theme: 'light',
           });
@@ -105,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const handleAuthException = (err: any) => {
     const code = err?.code || 'unknown';
     const rawMessage = err?.message || String(err);
-    const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+    const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'chrono-plan-alpha.vercel.app';
 
     let friendlyMessage = rawMessage;
     let suggestion = 'Please try again.';
@@ -115,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       suggestion = 'Click the pop-up icon in your browser address bar to allow popups, or try the "Sign In with Redirect" option below.';
     } else if (code === 'auth/unauthorized-domain') {
       friendlyMessage = `This domain (${currentHost}) is not authorized in your Firebase project.`;
-      suggestion = 'You can add this domain to Authorized Domains in Firebase Console -> Authentication -> Settings -> Authorized Domains.';
+      suggestion = `Go to Firebase Console -> Authentication -> Settings -> Authorized Domains, click "Add domain", and paste "${currentHost}".`;
     } else if (code === 'auth/popup-closed-by-user') {
       friendlyMessage = 'The sign-in window was closed before completion.';
       suggestion = 'Click below to try signing in again.';
@@ -123,8 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       friendlyMessage = 'Another sign-in request is already in progress.';
       suggestion = 'Please wait a moment and try again.';
     } else if (code === 'auth/operation-not-allowed') {
-      friendlyMessage = 'Google Sign-In is not enabled for this project.';
-      suggestion = 'Enable Google as a Sign-in Provider in Firebase Console -> Authentication -> Sign-in method.';
+      friendlyMessage = 'Sign-in method is not enabled in Firebase Console.';
+      suggestion = 'Enable Google or Anonymous sign-in in Firebase Console -> Authentication -> Sign-in method.';
     }
 
     setAuthError({
@@ -153,6 +155,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
       console.error('Redirect sign-in error:', err);
+      handleAuthException(err);
+      throw err;
+    }
+  };
+
+  const signInAsGuest = async () => {
+    setAuthError(null);
+    try {
+      await signInAnonymously(auth);
+      setIsAuthModalOpen(false);
+    } catch (err: any) {
+      console.warn('Anonymous sign in notice:', err);
       handleAuthException(err);
       throw err;
     }
@@ -197,6 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthModalOpen,
         signInWithGoogle,
         signInWithGoogleRedirectFlow,
+        signInAsGuest,
         signOutUser,
         updateUserPreferences,
         clearAuthError,
