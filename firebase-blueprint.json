@@ -1,0 +1,146 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "photoURL": { "type": "string", "maxLength": 1024 },
+        "theme": { "type": "string", "enum": ["light", "dark", "system"] },
+        "lastReportDismissedDate": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "email"]
+    },
+    "Planner": {
+      "title": "Planner",
+      "description": "A custom range planner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "startDate": { "type": "string", "maxLength": 32 },
+        "endDate": { "type": "string", "maxLength": 32 },
+        "dayParts": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "title", "startDate", "endDate"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A task assigned to a specific date, day-part, and subject in a planner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "plannerId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 300 },
+        "date": { "type": "string", "maxLength": 32 },
+        "dayPart": { "type": "string", "maxLength": 64 },
+        "subjectId": { "type": "string", "maxLength": 128 },
+        "isCompleted": { "type": "boolean" },
+        "order": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "plannerId", "title", "date", "dayPart", "subjectId", "isCompleted"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "A subject or category with a custom assigned color",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "color": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "name", "color"]
+    },
+    "ImportantNote": {
+      "title": "ImportantNote",
+      "description": "A tagged note with a date and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "content": { "type": "string", "maxLength": 2000 },
+        "tag": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 32 },
+        "isDone": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "title", "tag", "date"]
+    },
+    "Schedule": {
+      "title": "Schedule",
+      "description": "Fixed plan text per day-part",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "dayPart": { "type": "string", "maxLength": 64 },
+        "text": { "type": "string", "maxLength": 2000 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "dayPart"]
+    },
+    "DailyTodo": {
+      "title": "DailyTodo",
+      "description": "A checklist item for the Daily To DO list",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "text": { "type": "string", "maxLength": 300 },
+        "date": { "type": "string", "maxLength": 32 },
+        "isCompleted": { "type": "boolean" },
+        "priority": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "text", "date", "isCompleted"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/planners/{plannerId}": {
+      "schema": "Planner",
+      "description": "Custom date range planners"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks belonging to planners and days"
+    },
+    "/subjects/{subjectId}": {
+      "schema": "Subject",
+      "description": "User subjects with colors"
+    },
+    "/notes/{noteId}": {
+      "schema": "ImportantNote",
+      "description": "Important notes with date tags"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "Schedule",
+      "description": "Fixed schedule plans per day-part"
+    },
+    "/todos/{todoId}": {
+      "schema": "DailyTodo",
+      "description": "Daily to-do checklist items"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "ChronoPlan - Personal Range Planner & Day-Part Organizer",
+  "description": "A flexible personal planner with customizable date ranges, day-parts, drag-and-drop tasks, color-coded subjects, daily to-dos, morning review reports, and productivity analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

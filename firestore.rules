@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Health / connection test document
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.email is string && data.email.size() <= 256
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 128))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1024))
+        && (!('theme' in data) || (data.theme in ['light', 'dark', 'system']))
+        && (!('lastReportDismissedDate' in data) || (data.lastReportDismissedDate is string && data.lastReportDismissedDate.size() <= 32));
+    }
+
+    function isValidPlanner(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.startDate is string && data.startDate.size() <= 32
+        && data.endDate is string && data.endDate.size() <= 32
+        && (!('dayParts' in data) || (data.dayParts is list && data.dayParts.size() <= 30));
+    }
+
+    function isValidTask(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.plannerId is string && data.plannerId.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 300
+        && data.date is string && data.date.size() <= 32
+        && data.dayPart is string && data.dayPart.size() <= 64
+        && data.subjectId is string && data.subjectId.size() <= 128
+        && data.isCompleted is bool
+        && (!('order' in data) || data.order is number)
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000));
+    }
+
+    function isValidSubject(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.color is string && data.color.size() <= 32;
+    }
+
+    function isValidNote(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && (!('content' in data) || (data.content is string && data.content.size() <= 2000))
+        && data.tag is string && data.tag.size() <= 64
+        && data.date is string && data.date.size() <= 32
+        && (!('isDone' in data) || data.isDone is bool);
+    }
+
+    function isValidSchedule(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.dayPart is string && data.dayPart.size() <= 64
+        && (!('text' in data) || (data.text is string && data.text.size() <= 2000));
+    }
+
+    function isValidTodo(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 300
+        && data.date is string && data.date.size() <= 32
+        && data.isCompleted is bool
+        && (!('priority' in data) || (data.priority is string && data.priority.size() <= 32));
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow get, delete: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming());
+    }
+
+    // Planners
+    match /planners/{plannerId} {
+      allow get, delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(plannerId) && incoming().userId == request.auth.uid && isValidPlanner(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidPlanner(incoming());
+    }
+
+    // Tasks
+    match /tasks/{taskId} {
+      allow get, delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(taskId) && incoming().userId == request.auth.uid && isValidTask(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidTask(incoming());
+    }
+
+    // Subjects
+    match /subjects/{subjectId} {
+      allow get, delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(subjectId) && incoming().userId == request.auth.uid && isValidSubject(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidSubject(incoming());
+    }
+
+    // Notes
+    match /notes/{noteId} {
+      allow get, delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(noteId) && incoming().userId == request.auth.uid && isValidNote(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidNote(incoming());
+    }
+
+    // Schedules
+    match /schedules/{scheduleId} {
+      allow get, delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(scheduleId) && incoming().userId == request.auth.uid && isValidSchedule(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidSchedule(incoming());
+    }
+
+    // Daily Todos
+    match /todos/{todoId} {
+      allow get, delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(todoId) && incoming().userId == request.auth.uid && isValidTodo(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidTodo(incoming());
+    }
+  }
+}

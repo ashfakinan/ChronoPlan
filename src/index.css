@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --bg-canvas: #f8f6f1;
+    --bg-surface: #fdfcf9;
+    --bg-surface-elevated: #f4f2ec;
+    --border-subtle: #e5e2da;
+    --text-primary: #1f2126;
+    --text-secondary: #606470;
+    --text-muted: #8c909c;
+  }
+
+  .dark {
+    --bg-canvas: #121317;
+    --bg-surface: #1a1b20;
+    --bg-surface-elevated: #22242b;
+    --border-subtle: #292b34;
+    --text-primary: #eceef2;
+    --text-secondary: #9aa0ae;
+    --text-muted: #6e7380;
+  }
+
+  html, body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(140, 144, 156, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 144, 156, 0.45);
+}
+
+/* Safe area padding for mobile devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
