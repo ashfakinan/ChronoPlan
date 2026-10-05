@@ -3,20 +3,33 @@ import {
   User as FirebaseUser,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, googleProvider } from '../firebase/config';
-import { handleFirestoreError, OperationType } from '../firebase/errors';
 import { UserProfile } from '../types';
+
+export interface AuthErrorInfo {
+  code: string;
+  message: string;
+  domain?: string;
+  suggestion?: string;
+}
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  authError: AuthErrorInfo | null;
+  isAuthModalOpen: boolean;
+  setIsAuthModalOpen: (open: boolean) => void;
   signInWithGoogle: () => Promise<void>;
+  signInWithGoogleRedirectFlow: () => Promise<void>;
   signOutUser: () => Promise<void>;
   updateUserPreferences: (data: Partial<UserProfile>) => Promise<void>;
+  clearAuthError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,11 +38,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<AuthErrorInfo | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
+  // Check for redirect sign-in result on page load
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          console.log('Redirect sign-in successful:', result.user.email);
+          setCurrentUser(result.user);
+          setIsAuthModalOpen(false);
+        }
+      })
+      .catch((err: any) => {
+        console.warn('Redirect sign-in error:', err);
+        handleAuthException(err);
+      });
+  }, []);
+
+  // Listen to auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
+        setAuthError(null);
+        setIsAuthModalOpen(false);
         const userRef = doc(db, 'users', user.uid);
         try {
           const snap = await getDoc(userRef);
@@ -49,8 +83,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUserProfile(newProfile);
           }
         } catch (err) {
-          console.error('Failed to sync user profile:', err);
-          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+          console.warn('User profile sync notice:', err);
+          // Fallback to local profile in memory so user session stays functional
+          setUserProfile({
+            id: user.uid,
+            email: user.email || '',
+            displayName: user.displayName || 'Planner User',
+            photoURL: user.photoURL || '',
+            theme: 'light',
+          });
         }
       } else {
         setUserProfile(null);
@@ -61,11 +102,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  const handleAuthException = (err: any) => {
+    const code = err?.code || 'unknown';
+    const rawMessage = err?.message || String(err);
+    const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+
+    let friendlyMessage = rawMessage;
+    let suggestion = 'Please try again.';
+
+    if (code === 'auth/popup-blocked') {
+      friendlyMessage = 'The Google sign-in popup was blocked by your browser.';
+      suggestion = 'Click the pop-up icon in your browser address bar to allow popups, or try the "Sign In with Redirect" option below.';
+    } else if (code === 'auth/unauthorized-domain') {
+      friendlyMessage = `This domain (${currentHost}) is not authorized in your Firebase project.`;
+      suggestion = 'You can add this domain to Authorized Domains in Firebase Console -> Authentication -> Settings -> Authorized Domains.';
+    } else if (code === 'auth/popup-closed-by-user') {
+      friendlyMessage = 'The sign-in window was closed before completion.';
+      suggestion = 'Click below to try signing in again.';
+    } else if (code === 'auth/cancelled-popup-request') {
+      friendlyMessage = 'Another sign-in request is already in progress.';
+      suggestion = 'Please wait a moment and try again.';
+    } else if (code === 'auth/operation-not-allowed') {
+      friendlyMessage = 'Google Sign-In is not enabled for this project.';
+      suggestion = 'Enable Google as a Sign-in Provider in Firebase Console -> Authentication -> Sign-in method.';
+    }
+
+    setAuthError({
+      code,
+      message: friendlyMessage,
+      domain: currentHost,
+      suggestion,
+    });
+    setIsAuthModalOpen(true);
+  };
+
   const signInWithGoogle = async () => {
+    setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (err: unknown) {
-      console.error('Error during Google sign in:', err);
+    } catch (err: any) {
+      console.error('Sign-in error:', err);
+      handleAuthException(err);
+      throw err;
+    }
+  };
+
+  const signInWithGoogleRedirectFlow = async () => {
+    setAuthError(null);
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err: any) {
+      console.error('Redirect sign-in error:', err);
+      handleAuthException(err);
       throw err;
     }
   };
@@ -74,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await signOut(auth);
       setUserProfile(null);
-    } catch (err: unknown) {
+    } catch (err) {
       console.error('Error signing out:', err);
       throw err;
     }
@@ -90,8 +178,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       setUserProfile((prev) => (prev ? { ...prev, ...data } : null));
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${currentUser.uid}`);
+      console.warn('Update preferences warning:', err);
     }
+  };
+
+  const clearAuthError = () => {
+    setAuthError(null);
   };
 
   return (
@@ -100,9 +192,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentUser,
         userProfile,
         loading,
+        authError,
+        isAuthModalOpen,
+        setIsAuthModalOpen,
         signInWithGoogle,
+        signInWithGoogleRedirectFlow,
         signOutUser,
         updateUserPreferences,
+        clearAuthError,
       }}
     >
       {children}

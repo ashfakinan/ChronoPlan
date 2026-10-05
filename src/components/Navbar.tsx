@@ -27,7 +27,7 @@ interface NavbarProps {
 }
 
 export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarProps) {
-  const { currentUser, signInWithGoogle, signOutUser } = useAuth();
+  const { currentUser, signInWithGoogle, signOutUser, setIsAuthModalOpen } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const {
     planners,
@@ -46,6 +46,7 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
   const pendingTodosToday = todos.filter((t) => t.date === today && !t.isCompleted).length;
 
   const handleSignIn = async () => {
+    setIsAuthModalOpen(true);
     try {
       setIsSigningIn(true);
       await signInWithGoogle();

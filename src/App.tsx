@@ -10,6 +10,7 @@ import { CalendarTab } from './components/CalendarTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
 import { MorningReportModal } from './components/MorningReportModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { AuthModal } from './components/AuthModal';
 import { ActiveTab } from './types';
 import { Cloud, X } from 'lucide-react';
 
@@ -17,7 +18,7 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('planner');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [dismissedSyncBanner, setDismissedSyncBanner] = useState<boolean>(false);
-  const { currentUser, signInWithGoogle } = useAuth();
+  const { currentUser, setIsAuthModalOpen } = useAuth();
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f8f6f1] dark:bg-[#121317] text-[#1f2126] dark:text-[#eceef2] font-sans selection:bg-blue-500/20">
@@ -41,7 +42,7 @@ function MainApp() {
             </span>
             <button
               type="button"
-              onClick={() => signInWithGoogle()}
+              onClick={() => setIsAuthModalOpen(true)}
               className="ml-1 sm:ml-2 px-2.5 py-0.5 bg-[#1f2126] text-[#fdfcf9] dark:bg-[#eceef2] dark:text-[#121317] rounded-md font-semibold text-[11px] transition-colors"
             >
               Sign In
@@ -85,6 +86,9 @@ function MainApp() {
 
       {/* Daily Review / Morning Report Modal */}
       <MorningReportModal />
+
+      {/* Sign-In Authentication Modal & Diagnostics */}
+      <AuthModal />
     </div>
   );
 }
