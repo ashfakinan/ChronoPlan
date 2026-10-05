@@ -90,8 +90,10 @@
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
         "userId": { "type": "string", "maxLength": 128 },
-        "dayPart": { "type": "string", "maxLength": 64 },
+        "dayPart": { "type": "string", "maxLength": 100 },
+        "timeRange": { "type": "string", "maxLength": 64 },
         "text": { "type": "string", "maxLength": 2000 },
+        "order": { "type": "number" },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "userId", "dayPart"]

@@ -53,6 +53,10 @@ interface PlannerContextType {
 
   schedules: FixedSchedule[];
   saveScheduleForDayPart: (dayPart: string, text: string) => Promise<void>;
+  createSchedule: (dayPart: string, text?: string, timeRange?: string) => Promise<FixedSchedule>;
+  updateSchedule: (id: string, updates: Partial<FixedSchedule>) => Promise<void>;
+  renameSchedule: (id: string, newDayPart: string) => Promise<void>;
+  deleteSchedule: (id: string) => Promise<void>;
 
   todos: DailyTodo[];
   createTodo: (text: string, date: string, priority?: Priority) => Promise<DailyTodo>;
@@ -771,36 +775,71 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     await updateNote(id, { isDone: !note.isDone });
   };
 
-  // --- Fixed Schedules ---
-  const saveScheduleForDayPart = async (dayPart: string, text: string) => {
-    const existing = schedules.find((s) => s.dayPart === dayPart);
+  // --- Fixed Schedules CRUD ---
+  const createSchedule = async (
+    dayPart: string,
+    text: string = '',
+    timeRange: string = ''
+  ): Promise<FixedSchedule> => {
+    const id = generateId('sched');
     const userId = currentUser ? currentUser.uid : 'guest';
-    const schedId = existing ? existing.id : generateId('sched');
-
-    const updatedSched: FixedSchedule = {
-      id: schedId,
+    const newSched: FixedSchedule = {
+      id,
       userId,
-      dayPart,
-      text,
+      dayPart: dayPart.trim() || 'Fixed Plan',
+      text: text.trim(),
+      timeRange: timeRange.trim(),
+      order: schedules.length,
       updatedAt: new Date().toISOString(),
     };
 
     if (currentUser) {
       try {
-        await setDoc(doc(db, 'schedules', schedId), updatedSched);
+        await setDoc(doc(db, 'schedules', id), newSched);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `schedules/${schedId}`);
+        handleFirestoreError(err, OperationType.CREATE, `schedules/${id}`);
       }
     } else {
-      setSchedules((prev) => {
-        const idx = prev.findIndex((s) => s.dayPart === dayPart);
-        if (idx >= 0) {
-          const copy = [...prev];
-          copy[idx] = updatedSched;
-          return copy;
-        }
-        return [...prev, updatedSched];
-      });
+      setSchedules((prev) => [...prev, newSched]);
+    }
+    return newSched;
+  };
+
+  const updateSchedule = async (id: string, updates: Partial<FixedSchedule>) => {
+    const cleanUpdates = { ...updates, updatedAt: new Date().toISOString() };
+    if (currentUser) {
+      try {
+        await updateDoc(doc(db, 'schedules', id), cleanUpdates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `schedules/${id}`);
+      }
+    } else {
+      setSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, ...cleanUpdates } : s)));
+    }
+  };
+
+  const renameSchedule = async (id: string, newDayPart: string) => {
+    await updateSchedule(id, { dayPart: newDayPart.trim() });
+  };
+
+  const deleteSchedule = async (id: string) => {
+    if (currentUser) {
+      try {
+        await deleteDoc(doc(db, 'schedules', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `schedules/${id}`);
+      }
+    } else {
+      setSchedules((prev) => prev.filter((s) => s.id !== id));
+    }
+  };
+
+  const saveScheduleForDayPart = async (dayPart: string, text: string) => {
+    const existing = schedules.find((s) => s.dayPart === dayPart);
+    if (existing) {
+      await updateSchedule(existing.id, { text });
+    } else {
+      await createSchedule(dayPart, text);
     }
   };
 
@@ -948,6 +987,10 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
 
         schedules,
         saveScheduleForDayPart,
+        createSchedule,
+        updateSchedule,
+        renameSchedule,
+        deleteSchedule,
 
         todos,
         createTodo,

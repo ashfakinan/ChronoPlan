@@ -52,8 +52,10 @@ export interface ImportantNote {
 export interface FixedSchedule {
   id: string;
   userId: string;
-  dayPart: string;
+  dayPart: string; // The schedule plan title / name (e.g. "Morning", "Workout Routine", "Deep Work")
   text: string;
+  timeRange?: string; // Optional time range e.g. "07:00 - 08:30"
+  order?: number;
   updatedAt?: string;
 }
 
