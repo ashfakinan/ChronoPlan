@@ -12,6 +12,7 @@ import {
   Cloud,
   Layers,
   FileText,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -42,6 +43,21 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isNewPlannerModalOpen, setIsNewPlannerModalOpen] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<string | null>(null);
+
+  const handleCheckUpdate = async () => {
+    setUpdateCheckStatus('Checking...');
+    if (
+      typeof window !== 'undefined' &&
+      (window as unknown as { __chronoUpdateSW?: () => Promise<void> }).__chronoUpdateSW
+    ) {
+      await (window as unknown as { __chronoUpdateSW?: () => Promise<void> }).__chronoUpdateSW?.();
+    }
+    setTimeout(() => {
+      setUpdateCheckStatus('Latest version ready');
+      setTimeout(() => setUpdateCheckStatus(null), 3000);
+    }, 900);
+  };
 
   const today = getTodayISO();
   const pendingTodosToday = todos.filter((t) => t.date === today && !t.isCompleted).length;
@@ -297,6 +313,22 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
                       Connect Google Account
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={handleCheckUpdate}
+                    className="w-full px-3 py-1.5 text-xs font-medium text-[#1f2126] dark:text-[#eceef2] hover:bg-[#f4f2ec] dark:hover:bg-[#22242b] rounded-lg transition-colors flex items-center justify-between min-h-[38px]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 text-blue-600 dark:text-blue-400 ${
+                          updateCheckStatus === 'Checking...' ? 'animate-spin' : ''
+                        }`}
+                      />
+                      <span>{updateCheckStatus || 'Check for Updates'}</span>
+                    </div>
+                    <span className="text-[10px] text-[#8c909c]">v1.3</span>
+                  </button>
 
                   <button
                     type="button"

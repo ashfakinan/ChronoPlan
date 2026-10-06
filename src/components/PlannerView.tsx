@@ -28,6 +28,8 @@ import { TaskModal } from './TaskModal';
 import { PlannerModal } from './PlannerModal';
 import { SubjectModal } from './SubjectModal';
 import { DailyViewModal } from './DailyViewModal';
+import { DragGhostOverlay } from './DragGhostOverlay';
+import { useTaskDragAndScroll } from '../hooks/useTaskDragAndScroll';
 import { PlannerTask } from '../types';
 
 export function PlannerView() {
@@ -60,12 +62,26 @@ export function PlannerView() {
   const [isPlannerModalOpen, setIsPlannerModalOpen] = useState(false);
   const [isSubjectModalOpen, setIsSubjectModalOpen] = useState(false);
 
-  // Drag and drop state
-  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
-  const [activeDropCell, setActiveDropCell] = useState<{ date: string; dayPart: string } | null>(null);
-
   // Quick move popup for mobile
   const [movingTask, setMovingTask] = useState<PlannerTask | null>(null);
+
+  // Touch and desktop drag-and-drop with auto-scrolling
+  const {
+    isDragging,
+    draggedTask,
+    dropTarget,
+    pointerPos,
+    scrollDirections,
+    startTouchDrag,
+    handleDesktopDragOver,
+    handleDesktopDragLeave,
+    handleDesktopDrop,
+  } = useTaskDragAndScroll({
+    onDropTask: async (taskId, targetDate, targetDayPart) => {
+      await moveTask(taskId, targetDate, targetDayPart);
+    },
+    containerId: 'planner-matrix-scroll',
+  });
 
   // Compute days in range for active planner
   const days = useMemo(() => {
@@ -109,30 +125,26 @@ export function PlannerView() {
 
   const getSubject = (subjectId: string) => subjects.find((s) => s.id === subjectId);
 
-  // Drag handlers
+  // Desktop & fallback drag state
+  const [desktopDraggedTaskId, setDesktopDraggedTaskId] = useState<string | null>(null);
+
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
     e.dataTransfer.setData('text/plain', taskId);
     e.dataTransfer.effectAllowed = 'move';
-    setDraggedTaskId(taskId);
+    setDesktopDraggedTaskId(taskId);
   };
 
   const handleDragOver = (e: React.DragEvent, date: string, dayPart: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setActiveDropCell({ date, dayPart });
+    handleDesktopDragOver(e, date, dayPart);
   };
 
   const handleDragLeave = () => {
-    setActiveDropCell(null);
+    handleDesktopDragLeave();
   };
 
   const handleDrop = async (e: React.DragEvent, date: string, dayPart: string) => {
-    e.preventDefault();
-    const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
-    setActiveDropCell(null);
-    setDraggedTaskId(null);
-    if (!taskId) return;
-    await moveTask(taskId, date, dayPart);
+    await handleDesktopDrop(e, date, dayPart, desktopDraggedTaskId);
+    setDesktopDraggedTaskId(null);
   };
 
   const handleOpenAddTask = (date: string, dayPart: string) => {
@@ -369,11 +381,20 @@ export function PlannerView() {
               const partTasks = filteredTasks.filter(
                 (t) => t.date === mobileSelectedDate && t.dayPart === dayPart
               );
+              const isSectionDropTarget =
+                dropTarget?.date === mobileSelectedDate && dropTarget?.dayPart === dayPart;
 
               return (
                 <div
                   key={dayPart}
-                  className="rounded-xl border border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9] dark:bg-[#1a1b20] p-3 shadow-2xs"
+                  data-drop-target="true"
+                  data-drop-date={mobileSelectedDate}
+                  data-drop-daypart={dayPart}
+                  className={`rounded-xl border transition-all p-3 shadow-2xs ${
+                    isSectionDropTarget
+                      ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-500/10 dark:bg-blue-500/15'
+                      : 'border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9] dark:bg-[#1a1b20]'
+                  }`}
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-[#f4f2ec] dark:border-[#22242b]">
                     <div className="flex items-center gap-1.5 font-semibold text-xs text-[#1f2126] dark:text-[#eceef2]">
@@ -396,25 +417,39 @@ export function PlannerView() {
                   <div className="space-y-2 mt-2">
                     {partTasks.length === 0 ? (
                       <div className="py-3 text-center text-[11px] text-[#8c909c] italic">
-                        No tasks in {dayPart}
+                        {isSectionDropTarget ? '✨ Drop task here' : `No tasks in ${dayPart}`}
                       </div>
                     ) : (
                       partTasks.map((task) => {
                         const subj = getSubject(task.subjectId);
+                        const isTaskBeingDragged = draggedTask?.id === task.id;
+
                         return (
                           <div
                             key={task.id}
                             className={`flex items-start justify-between gap-2 p-2.5 rounded-lg border transition-all ${
-                              task.isCompleted
+                              isTaskBeingDragged
+                                ? 'opacity-35 scale-98 border-dashed border-blue-400 bg-blue-500/5'
+                                : task.isCompleted
                                 ? 'bg-[#f4f2ec]/60 dark:bg-[#15161a] border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                 : 'bg-[#fdfcf9] dark:bg-[#1a1b20] border-[#e5e2da] dark:border-[#292b34]'
                             }`}
                           >
-                            <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                            <div className="flex items-start gap-2 flex-1 min-w-0">
+                              {/* Touch Drag Grip Handle */}
+                              <div
+                                onTouchStart={(e) => startTouchDrag(e, task)}
+                                className="mt-0.5 p-1 -ml-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-grab active:cursor-grabbing touch-none select-none flex items-center justify-center shrink-0 min-h-[38px] min-w-[26px]"
+                                title="Drag to move task"
+                                aria-label="Drag task"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+
                               <button
                                 type="button"
                                 onClick={() => toggleTaskComplete(task.id)}
-                                className="mt-0.5 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0 min-h-[38px] min-w-[38px] flex items-center justify-center -ml-1.5"
+                                className="mt-0.5 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0 min-h-[38px] min-w-[32px] flex items-center justify-center -ml-1"
                                 aria-label={task.isCompleted ? 'Mark incomplete' : 'Mark done'}
                               >
                                 {task.isCompleted ? (
@@ -486,7 +521,10 @@ export function PlannerView() {
       {/* MATRIX TABLE VIEW (Days on Left vertically, Day-Parts horizontally at top) */}
       <div className={`flex-1 overflow-auto p-2 sm:p-4 ${mobileViewMode === 'matrix' ? 'block' : 'hidden md:block'}`}>
         <div className="inline-block min-w-full align-top">
-          <div className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-auto max-h-[calc(100vh-12rem)]">
+          <div
+            id="planner-matrix-scroll"
+            className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-auto max-h-[calc(100vh-12rem)] scroll-smooth"
+          >
             <table className="border-collapse table-auto min-w-full text-left">
               {/* ========================================================= */}
               {/* DAYS ON LEFT (ROWS), DAY-PARTS AT TOP (COLUMNS)           */}
@@ -583,33 +621,46 @@ export function PlannerView() {
                               (t) => t.date === dateStr && t.dayPart === dayPart
                             );
                             const isDropTarget =
-                              activeDropCell?.date === dateStr && activeDropCell?.dayPart === dayPart;
+                              dropTarget?.date === dateStr && dropTarget?.dayPart === dayPart;
 
                             return (
                               <td
                                 key={`${dateStr}-${dayPart}`}
+                                data-drop-target="true"
+                                data-drop-date={dateStr}
+                                data-drop-daypart={dayPart}
                                 onDragOver={(e) => handleDragOver(e, dateStr, dayPart)}
                                 onDragLeave={handleDragLeave}
                                 onDrop={(e) => handleDrop(e, dateStr, dayPart)}
                                 className={`w-64 min-w-[210px] p-2.5 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[110px] relative ${
                                   isDropTarget
-                                    ? 'bg-blue-500/10 ring-2 ring-blue-500/30'
+                                    ? 'bg-blue-500/15 ring-2 ring-blue-500/60 shadow-inner'
                                     : isCurrent
                                     ? 'bg-blue-500/5'
                                     : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
                                 }`}
                               >
+                                {isDropTarget && (
+                                  <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-500/20 rounded px-1.5 py-0.5 mb-1.5 flex items-center gap-1 animate-pulse">
+                                    ✨ Drop into {dayPart}
+                                  </div>
+                                )}
+
                                 {/* Tasks list in this cell */}
                                 <div className="space-y-1.5 min-h-[50px]">
                                   {cellTasks.map((task) => {
                                     const subj = getSubject(task.subjectId);
+                                    const isBeingDragged = draggedTask?.id === task.id;
+
                                     return (
                                       <div
                                         key={task.id}
                                         draggable
                                         onDragStart={(e) => handleDragStart(e, task.id)}
-                                        className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing ${
-                                          task.isCompleted
+                                        className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing select-none ${
+                                          isBeingDragged
+                                            ? 'opacity-30 scale-95 border-dashed border-blue-500 bg-blue-500/10'
+                                            : task.isCompleted
                                             ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                             : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
                                         }`}
@@ -664,7 +715,15 @@ export function PlannerView() {
                                           )}
                                         </div>
 
-                                        <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-100 transition-opacity shrink-0" />
+                                        {/* Touch & mouse grip handle */}
+                                        <div
+                                          onTouchStart={(e) => startTouchDrag(e, task)}
+                                          className="p-1 -mr-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-grab active:cursor-grabbing touch-none select-none flex items-center justify-center shrink-0 min-h-[30px] min-w-[22px]"
+                                          title="Drag to move task"
+                                          aria-label="Drag task"
+                                        >
+                                          <GripVertical className="w-3.5 h-3.5 opacity-60 group-hover/task:opacity-100 transition-opacity" />
+                                        </div>
                                       </div>
                                     );
                                   })}
@@ -766,33 +825,46 @@ export function PlannerView() {
                           const cellTasks = filteredTasks.filter(
                             (t) => t.date === dateStr && t.dayPart === dayPart
                           );
-                          const isDropTarget =
-                            activeDropCell?.date === dateStr && activeDropCell?.dayPart === dayPart;
+                          const isCellDropTarget =
+                            dropTarget?.date === dateStr && dropTarget?.dayPart === dayPart;
 
                           return (
                             <td
                               key={`${dateStr}-${dayPart}`}
+                              data-drop-target="true"
+                              data-drop-date={dateStr}
+                              data-drop-daypart={dayPart}
                               onDragOver={(e) => handleDragOver(e, dateStr, dayPart)}
                               onDragLeave={handleDragLeave}
                               onDrop={(e) => handleDrop(e, dateStr, dayPart)}
                               className={`p-2 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[110px] relative ${
-                                isDropTarget
-                                  ? 'bg-blue-500/10 ring-2 ring-blue-500/30'
+                                isCellDropTarget
+                                  ? 'bg-blue-500/15 ring-2 ring-blue-500/60 shadow-inner'
                                   : isToday(dateStr)
                                   ? 'bg-blue-500/5'
                                   : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
                               }`}
                             >
+                              {isCellDropTarget && (
+                                <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-500/20 rounded px-1.5 py-0.5 mb-1.5 flex items-center gap-1 animate-pulse">
+                                  ✨ Drop into {dayPart}
+                                </div>
+                              )}
+
                               <div className="space-y-1.5 min-h-[50px]">
                                 {cellTasks.map((task) => {
                                   const subj = getSubject(task.subjectId);
+                                  const isBeingDragged = draggedTask?.id === task.id;
+
                                   return (
                                     <div
                                       key={task.id}
                                       draggable
                                       onDragStart={(e) => handleDragStart(e, task.id)}
-                                      className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing ${
-                                        task.isCompleted
+                                      className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing select-none ${
+                                        isBeingDragged
+                                          ? 'opacity-30 scale-95 border-dashed border-blue-500 bg-blue-500/10'
+                                          : task.isCompleted
                                           ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                           : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
                                       }`}
@@ -840,7 +912,16 @@ export function PlannerView() {
                                           </div>
                                         )}
                                       </div>
-                                      <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-100 transition-opacity shrink-0" />
+
+                                      {/* Touch grip handle */}
+                                      <div
+                                        onTouchStart={(e) => startTouchDrag(e, task)}
+                                        className="p-1 -mr-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-grab active:cursor-grabbing touch-none select-none flex items-center justify-center shrink-0 min-h-[30px] min-w-[22px]"
+                                        title="Drag to move task"
+                                        aria-label="Drag task"
+                                      >
+                                        <GripVertical className="w-3.5 h-3.5 opacity-60 group-hover/task:opacity-100 transition-opacity" />
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -850,7 +931,7 @@ export function PlannerView() {
                                 onClick={() => handleOpenAddTask(dateStr, dayPart)}
                                 className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-70 hover:opacity-100 transition-all min-h-[30px]"
                               >
-                                <Plus className="w-3 h-3" /> Add
+                                <Plus className="w-3.5 h-3.5" /> Add
                               </button>
                             </td>
                           );
@@ -967,6 +1048,16 @@ export function PlannerView() {
         date={selectedDayForDetail}
         onClose={() => setSelectedDayForDetail(null)}
         onOpenSubjectModal={() => setIsSubjectModalOpen(true)}
+      />
+
+      {/* Floating Drag Ghost & Edge Scroll Indicators */}
+      <DragGhostOverlay
+        isDragging={isDragging}
+        task={draggedTask}
+        pointerPos={pointerPos}
+        dropTarget={dropTarget}
+        subject={draggedTask ? getSubject(draggedTask.subjectId) : undefined}
+        scrollDirections={scrollDirections}
       />
     </div>
   );

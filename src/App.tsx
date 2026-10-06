@@ -12,6 +12,7 @@ import { MorningReportModal } from './components/MorningReportModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AuthModal } from './components/AuthModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { AppUpdateToast } from './components/AppUpdateToast';
 import { ActiveTab } from './types';
 import { Cloud, X } from 'lucide-react';
 
@@ -93,6 +94,9 @@ function MainApp() {
 
       {/* Real-time Offline & Sync Indicator */}
       <OfflineIndicator />
+
+      {/* App Update Toast */}
+      <AppUpdateToast />
     </div>
   );
 }
