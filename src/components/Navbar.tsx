@@ -327,7 +327,7 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
                       />
                       <span>{updateCheckStatus || 'Check for Updates'}</span>
                     </div>
-                    <span className="text-[10px] text-[#8c909c]">v1.6.0</span>
+                    <span className="text-[10px] text-[#8c909c]">v1.7.0</span>
                   </button>
 
                   <button

@@ -61,8 +61,8 @@ export function PlannerView() {
   // Matrix orientation: 'days-on-left' (default requested by user: Days on left vertically, Day-parts at top)
   const [matrixOrientation, setMatrixOrientation] = useState<'days-on-left' | 'days-on-top'>('days-on-left');
 
-  // Mobile navigation mode: 'matrix' (Days on Left) or 'day-focus'
-  const [mobileViewMode, setMobileViewMode] = useState<'matrix' | 'day-focus'>('matrix');
+  // Mobile navigation mode: 'day-focus' (sections: Morning, Afternoon, Evening, Night) or 'matrix'
+  const [mobileViewMode, setMobileViewMode] = useState<'matrix' | 'day-focus'>('day-focus');
   const [mobileSelectedDate, setMobileSelectedDate] = useState<string>('');
 
   // Modals state
@@ -207,7 +207,7 @@ export function PlannerView() {
     holdTimerRef.current = window.setTimeout(() => {
       holdTriggeredRef.current = true;
       startTouchDrag(e, task);
-    }, 220);
+    }, 160);
   };
 
   const handleTaskTouchMove = (e: React.TouchEvent) => {
@@ -216,7 +216,7 @@ export function PlannerView() {
       if (touch) {
         const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
         const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
-        if (dx > 8 || dy > 8) {
+        if (dx > 16 || dy > 16) {
           window.clearTimeout(holdTimerRef.current);
           holdTimerRef.current = null;
         }

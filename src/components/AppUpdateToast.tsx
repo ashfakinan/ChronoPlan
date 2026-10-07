@@ -8,10 +8,10 @@ export function AppUpdateToast() {
   useEffect(() => {
     // Check if app just updated
     const lastVersion = localStorage.getItem('cp_app_version');
-    const CURRENT_VERSION = '1.6.0';
+    const CURRENT_VERSION = '1.7.0';
 
     if (lastVersion && lastVersion !== CURRENT_VERSION) {
-      setToastMessage('✨ Updated: Continued Task Multi-Day Distribution & Auto Side Scroll active!');
+      setToastMessage('✨ Updated: Screen moves directly with your thumb across sections!');
       setShowToast(true);
       const timer = setTimeout(() => setShowToast(false), 5000);
       localStorage.setItem('cp_app_version', CURRENT_VERSION);

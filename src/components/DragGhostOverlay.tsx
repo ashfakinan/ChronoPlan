@@ -27,38 +27,37 @@ export function DragGhostOverlay({
       style={{
         left: 0,
         top: 0,
-        transform: `translate3d(${pointerPos.x - 70}px, ${pointerPos.y - 45}px, 0)`,
+        transform: `translate3d(${pointerPos.x - 80}px, ${pointerPos.y - 65}px, 0)`,
       }}
     >
       <div className="flex flex-col gap-1 items-start">
         {/* Target destination hint badge */}
         {dropTarget ? (
-          <div className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white shadow-md flex items-center gap-1 border border-blue-400">
-            <Layers className="w-3 h-3" />
+          <div className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-600 text-white shadow-lg flex items-center gap-1 border border-blue-300 animate-pulse">
+            <Layers className="w-3.5 h-3.5" />
             <span>
-              Move to {dropTarget.dayPart} ({formatShortDate(dropTarget.date)})
+              Moving to {dropTarget.dayPart} ({formatShortDate(dropTarget.date)})
             </span>
           </div>
         ) : (
-          <div className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#1f2126]/80 text-[#fdfcf9] dark:bg-[#eceef2]/90 dark:text-[#121317] shadow-md backdrop-blur-xs">
-            Drag to Morning, Afternoon, Evening, Night...
+          <div className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#1f2126]/90 text-[#fdfcf9] dark:bg-[#eceef2]/95 dark:text-[#121317] shadow-lg backdrop-blur-xs">
+            Moving with thumb... Release over section to drop
           </div>
         )}
 
-        {/* Elevated Task Card */}
-        <div className="w-48 sm:w-56 p-2.5 rounded-xl bg-[#fdfcf9] dark:bg-[#202127] border-2 border-blue-500 shadow-2xl flex items-start gap-2 scale-105 rotate-1">
+        {/* Elevated Task Card - Lifted off the screen */}
+        <div className="w-52 sm:w-60 p-3 rounded-xl bg-[#fdfcf9] dark:bg-[#202127] border-2 border-blue-500 shadow-2xl ring-4 ring-blue-500/30 flex items-start gap-2.5 scale-105 -rotate-1 backdrop-blur-md">
           <div
             className="w-1.5 self-stretch rounded-full shrink-0"
             style={{ backgroundColor: subject?.color || '#3B82F6' }}
           />
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-[#1f2126] dark:text-[#eceef2] truncate leading-tight">
+            <div className="text-xs font-bold text-[#1f2126] dark:text-[#eceef2] truncate leading-tight">
               {task.title}
             </div>
             {subject && (
               <div
-                className="text-[9px] font-bold mt-0.5 truncate"
-                style={{ color: subject.color }}
+                className="text-[10px] font-semibold mt-0.5 truncate text-blue-600 dark:text-blue-400"
               >
                 {subject.name}
               </div>

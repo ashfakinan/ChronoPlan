@@ -13,7 +13,7 @@ interface UseTaskDragAndScrollProps {
 
 export function useTaskDragAndScroll({
   onDropTask,
-  containerId = 'planner-matrix-scroll',
+  containerId = 'day-focus-scroll',
 }: UseTaskDragAndScrollProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [draggedTask, setDraggedTask] = useState<PlannerTask | null>(null);
@@ -23,6 +23,7 @@ export function useTaskDragAndScroll({
   const draggedTaskRef = useRef<PlannerTask | null>(null);
   const dropTargetRef = useRef<DropCellInfo | null>(null);
   const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTouchPosRef = useRef<{ x: number; y: number } | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
   // Synchronize refs
@@ -37,6 +38,50 @@ export function useTaskDragAndScroll({
   useEffect(() => {
     pointerPosRef.current = pointerPos;
   }, [pointerPos]);
+
+  // Robust active scroll container finder that checks actual visibility
+  const getActiveScrollContainer = useCallback((): HTMLElement | null => {
+    if (typeof document === 'undefined') return null;
+
+    // Check preferred container
+    if (containerId) {
+      const el = document.getElementById(containerId);
+      if (el && el.offsetParent !== null && (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)) {
+        return el;
+      }
+    }
+
+    // Check candidate scroll IDs in priority order
+    const candidateIds = ['day-focus-scroll', 'planner-matrix-scroll', 'daily-modal-scroll'];
+    for (const id of candidateIds) {
+      const el = document.getElementById(id);
+      if (el && el.offsetParent !== null && (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)) {
+        return el;
+      }
+    }
+
+    // Check visible elements with overflow auto/scroll
+    const scrollables = document.querySelectorAll<HTMLElement>('.overflow-y-auto, .overflow-auto');
+    for (let i = 0; i < scrollables.length; i++) {
+      const el = scrollables[i];
+      if (el.offsetParent !== null && (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)) {
+        return el;
+      }
+    }
+
+    return null;
+  }, [containerId]);
+
+  // Scroll active container or window
+  const performScroll = useCallback((dx: number, dy: number) => {
+    const container = getActiveScrollContainer();
+    if (container) {
+      if (dy !== 0) container.scrollTop += dy;
+      if (dx !== 0) container.scrollLeft += dx;
+    } else {
+      window.scrollBy(dx, dy);
+    }
+  }, [getActiveScrollContainer]);
 
   // Identify drop target under given screen coordinates
   const detectDropTarget = useCallback((x: number, y: number): DropCellInfo | null => {
@@ -75,13 +120,14 @@ export function useTaskDragAndScroll({
     setDropTarget(null);
     setPointerPos(null);
     pointerPosRef.current = null;
+    lastTouchPosRef.current = null;
 
     if (task && target) {
       if (task.date !== target.date || task.dayPart !== target.dayPart) {
         // Haptic feedback for successful drop
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
           try {
-            navigator.vibrate([20, 35]);
+            navigator.vibrate([25, 45]);
           } catch {
             // ignore
           }
@@ -91,8 +137,9 @@ export function useTaskDragAndScroll({
     }
   }, [onDropTask]);
 
-  // Smooth edge scrolling loop running during drag
-  // Only scrolls when the finger reaches the edge boundary (e.g. dragging from Morning down to Night)
+  // Continuous auto-scrolling animation loop while dragging
+  // When thumb is in the lower half -> smoothly auto-scrolls down so lower sections (Afternoon, Evening, Night) come into view
+  // When thumb is in the upper half -> smoothly auto-scrolls up so upper sections (Morning) come into view
   useEffect(() => {
     if (!isDragging) {
       if (animFrameRef.current) {
@@ -109,74 +156,60 @@ export function useTaskDragAndScroll({
         return;
       }
 
-      // Locate active scrollable container
-      const container =
-        document.getElementById(containerId) ||
-        document.getElementById('day-focus-scroll') ||
-        document.getElementById('daily-modal-scroll') ||
-        document.getElementById('planner-matrix-scroll') ||
-        document.querySelector('.overflow-y-auto') ||
-        document.querySelector('.overflow-auto');
-
+      const container = getActiveScrollContainer();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
 
-      let rect: { top: number; bottom: number; left: number; right: number };
-      if (container && container instanceof HTMLElement) {
+      let rectTop = 0;
+      let rectBottom = viewportHeight;
+      let rectLeft = 0;
+      let rectRight = viewportWidth;
+
+      if (container) {
         const cRect = container.getBoundingClientRect();
-        rect = {
-          top: Math.max(0, cRect.top),
-          bottom: Math.min(viewportHeight, cRect.bottom),
-          left: Math.max(0, cRect.left),
-          right: Math.min(viewportWidth, cRect.right),
-        };
-      } else {
-        rect = { top: 0, bottom: viewportHeight, left: 0, right: viewportWidth };
+        rectTop = Math.max(0, cRect.top);
+        rectBottom = Math.min(viewportHeight, cRect.bottom);
+        rectLeft = Math.max(0, cRect.left);
+        rectRight = Math.min(viewportWidth, cRect.right);
       }
 
-      const EDGE_ZONE_Y = 110; // Active edge trigger zone in pixels
-      const EDGE_ZONE_X = Math.max(100, Math.round(rect.right * 0.15)); // Proportional edge zone for smooth side scrolling
+      const visibleHeight = rectBottom - rectTop;
+      const centerY = rectTop + visibleHeight * 0.5;
+      const deadZoneY = Math.max(35, visibleHeight * 0.12);
 
       let scrollDeltaY = 0;
+
+      // Lower half (moving down towards Evening, Night)
+      if (pos.y > centerY + deadZoneY) {
+        const range = Math.max(1, rectBottom - (centerY + deadZoneY));
+        const depth = Math.min(1, Math.max(0, (pos.y - (centerY + deadZoneY)) / range));
+        scrollDeltaY = Math.round(3 + depth * 17); // 3px to 20px per frame
+      }
+      // Upper half (moving up towards Morning)
+      else if (pos.y < centerY - deadZoneY) {
+        const range = Math.max(1, (centerY - deadZoneY) - rectTop);
+        const depth = Math.min(1, Math.max(0, ((centerY - deadZoneY) - pos.y) / range));
+        scrollDeltaY = -Math.round(3 + depth * 17);
+      }
+
+      // Horizontal side-scrolling (for Matrix table view)
+      const visibleWidth = rectRight - rectLeft;
+      const centerX = rectLeft + visibleWidth * 0.5;
+      const deadZoneX = Math.max(40, visibleWidth * 0.14);
+
       let scrollDeltaX = 0;
-
-      // When dragging downwards (e.g. from Morning down towards Night)
-      if (pos.y > rect.bottom - EDGE_ZONE_Y) {
-        const depth = Math.min(1, Math.max(0, (pos.y - (rect.bottom - EDGE_ZONE_Y)) / EDGE_ZONE_Y));
-        scrollDeltaY = Math.round(4 + depth * 15); // 4px to 19px per frame
-      }
-      // When dragging upwards (e.g. from Night up towards Morning)
-      else if (pos.y < rect.top + EDGE_ZONE_Y) {
-        const depth = Math.min(1, Math.max(0, ((rect.top + EDGE_ZONE_Y) - pos.y) / EDGE_ZONE_Y));
-        scrollDeltaY = -Math.round(4 + depth * 15);
-      }
-
-      // Horizontal edge scrolling (Auto Side Scroll for Matrix table view & carousels)
-      if (pos.x > rect.right - EDGE_ZONE_X) {
-        const depth = Math.min(1, Math.max(0, (pos.x - (rect.right - EDGE_ZONE_X)) / EDGE_ZONE_X));
-        scrollDeltaX = Math.round(5 + depth * 16);
-      } else if (pos.x < rect.left + EDGE_ZONE_X) {
-        const depth = Math.min(1, Math.max(0, ((rect.left + EDGE_ZONE_X) - pos.x) / EDGE_ZONE_X));
-        scrollDeltaX = -Math.round(5 + depth * 16);
+      if (pos.x > centerX + deadZoneX) {
+        const range = Math.max(1, rectRight - (centerX + deadZoneX));
+        const depth = Math.min(1, Math.max(0, (pos.x - (centerX + deadZoneX)) / range));
+        scrollDeltaX = Math.round(3 + depth * 17);
+      } else if (pos.x < centerX - deadZoneX) {
+        const range = Math.max(1, (centerX - deadZoneX) - rectLeft);
+        const depth = Math.min(1, Math.max(0, ((centerX - deadZoneX) - pos.x) / range));
+        scrollDeltaX = -Math.round(3 + depth * 17);
       }
 
       if (scrollDeltaY !== 0 || scrollDeltaX !== 0) {
-        if (container && container instanceof HTMLElement) {
-          if (scrollDeltaY !== 0) container.scrollTop += scrollDeltaY;
-          if (scrollDeltaX !== 0) container.scrollLeft += scrollDeltaX;
-        } else {
-          window.scrollBy(scrollDeltaX, scrollDeltaY);
-        }
-
-        // Also check if matrix or carousel containers need horizontal side scrolling
-        const matrixScroll = document.getElementById('planner-matrix-scroll');
-        if (matrixScroll && scrollDeltaX !== 0 && matrixScroll !== container) {
-          matrixScroll.scrollLeft += scrollDeltaX;
-        }
-        const carouselScroll = document.getElementById('day-carousel-scroll');
-        if (carouselScroll && scrollDeltaX !== 0 && carouselScroll !== container) {
-          carouselScroll.scrollLeft += scrollDeltaX;
-        }
+        performScroll(scrollDeltaX, scrollDeltaY);
 
         // Drop target re-check as elements scroll under the pointer
         const found = detectDropTarget(pos.x, pos.y);
@@ -196,14 +229,14 @@ export function useTaskDragAndScroll({
         animFrameRef.current = null;
       }
     };
-  }, [isDragging, containerId, detectDropTarget]);
+  }, [isDragging, getActiveScrollContainer, performScroll, detectDropTarget]);
 
   // Global touch handlers during active drag
   useEffect(() => {
     if (!isDragging) return;
 
     const handleWindowTouchMove = (e: TouchEvent) => {
-      // Prevent browser default scroll during task drag to avoid layout jumps
+      // Prevent browser default scroll during task drag
       if (e.cancelable) {
         e.preventDefault();
       }
@@ -211,13 +244,25 @@ export function useTaskDragAndScroll({
       const touch = e.touches[0];
       if (!touch) return;
 
-      const x = touch.clientX;
-      const y = touch.clientY;
+      const currentX = touch.clientX;
+      const currentY = touch.clientY;
 
-      setPointerPos({ x, y });
-      pointerPosRef.current = { x, y };
+      // DIRECT THUMB MOVEMENT: Screen moves directly with the thumb!
+      // As the thumb moves down or up across sections, the screen moves with the thumb!
+      if (lastTouchPosRef.current) {
+        const deltaY = currentY - lastTouchPosRef.current.y;
+        const deltaX = currentX - lastTouchPosRef.current.x;
 
-      const found = detectDropTarget(x, y);
+        if (Math.abs(deltaY) > 0 || Math.abs(deltaX) > 0) {
+          performScroll(deltaX, deltaY);
+        }
+      }
+
+      setPointerPos({ x: currentX, y: currentY });
+      pointerPosRef.current = { x: currentX, y: currentY };
+      lastTouchPosRef.current = { x: currentX, y: currentY };
+
+      const found = detectDropTarget(currentX, currentY);
       setDropTarget(found);
     };
 
@@ -231,6 +276,7 @@ export function useTaskDragAndScroll({
       setDropTarget(null);
       setPointerPos(null);
       pointerPosRef.current = null;
+      lastTouchPosRef.current = null;
       if (typeof document !== 'undefined') {
         document.body.style.userSelect = '';
         document.body.style.touchAction = '';
@@ -246,17 +292,18 @@ export function useTaskDragAndScroll({
       window.removeEventListener('touchend', handleWindowTouchEnd);
       window.removeEventListener('touchcancel', handleWindowTouchCancel);
     };
-  }, [isDragging, detectDropTarget, finalizeDrop]);
+  }, [isDragging, detectDropTarget, finalizeDrop, performScroll]);
 
-  // Start touch drag (called on grip handle or task card)
+  // Start touch drag (called on grip handle or task card hold)
   const startTouchDrag = useCallback(
     (e: React.TouchEvent | TouchEvent, task: PlannerTask) => {
       const touch = 'touches' in e ? e.touches[0] : null;
       if (!touch) return;
 
+      // Haptic confirmation of task lift
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         try {
-          navigator.vibrate(20);
+          navigator.vibrate([35]);
         } catch {
           // ignore
         }
@@ -274,6 +321,7 @@ export function useTaskDragAndScroll({
       setDraggedTask(task);
       setPointerPos({ x, y });
       pointerPosRef.current = { x, y };
+      lastTouchPosRef.current = { x, y };
 
       const currentCell = detectDropTarget(x, y);
       setDropTarget(currentCell);
