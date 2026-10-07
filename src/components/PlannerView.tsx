@@ -542,7 +542,11 @@ export function PlannerView() {
           {/* Add Task Button */}
           <button
             type="button"
-            onClick={() => handleOpenAddTask(days[0] || activePlanner.startDate, dayParts[0] || 'Morning')}
+            onClick={() => {
+              const todayStr = getTodayISO();
+              const defaultDate = days.includes(todayStr) ? todayStr : (mobileSelectedDate || todayStr);
+              handleOpenAddTask(defaultDate, dayParts[0] || 'Morning');
+            }}
             className="px-3 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 min-h-[34px]"
           >
             <Plus className="w-3.5 h-3.5" />

@@ -10,10 +10,11 @@ import {
   Minus,
   Check,
   CalendarDays,
+  Calendar,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import { PlannerTask } from '../types';
-import { addDays, formatDisplayDate, parseISODate } from '../utils/dateUtils';
+import { addDays, formatDisplayDate, parseISODate, getTodayISO, isToday } from '../utils/dateUtils';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -65,7 +66,10 @@ export function TaskModal({
       setIsContinuedTask(false);
     } else {
       setTitle('');
-      setDate(initialDate || (activePlanner ? activePlanner.startDate : ''));
+      // Current day (Today) is the proper default, never defaulting back to Monday / planner start date
+      const todayISO = getTodayISO();
+      const resolvedDate = initialDate && initialDate !== activePlanner?.startDate ? initialDate : todayISO;
+      setDate(resolvedDate);
       setDayPart(initialDayPart || (activePlanner?.dayParts?.[0] || 'Morning'));
       setNotes('');
       setIsCompleted(false);
@@ -77,6 +81,18 @@ export function TaskModal({
       }
     }
   }, [taskToEdit, initialDate, initialDayPart, activePlanner, subjects, isOpen]);
+
+  // Handle checking / unchecking Continued Task
+  const handleToggleContinuedTask = (checked: boolean) => {
+    setIsContinuedTask(checked);
+    if (checked) {
+      const todayISO = getTodayISO();
+      // Ensure continued work starts from the CURRENT DAY (Today)
+      if (!date || date < todayISO || (activePlanner && date === activePlanner.startDate && date !== todayISO)) {
+        setDate(todayISO);
+      }
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -295,7 +311,7 @@ export function TaskModal({
                   type="checkbox"
                   id="continued-task-checkbox"
                   checked={isContinuedTask}
-                  onChange={(e) => setIsContinuedTask(e.target.checked)}
+                  onChange={(e) => handleToggleContinuedTask(e.target.checked)}
                   className="mt-0.5 w-4 h-4 rounded text-blue-600 border-[#cfcbc2] dark:border-[#3a3d4a] focus:ring-blue-500 cursor-pointer shrink-0"
                 />
                 <div className="flex-1 min-w-0">
@@ -308,7 +324,7 @@ export function TaskModal({
                     </span>
                   </div>
                   <p className="text-[11px] text-[#606470] dark:text-[#9aa0ae] mt-0.5 leading-snug">
-                    Work on this task continuously across consecutive days (e.g. next 14 days)
+                    Work on this task continuously across consecutive days (starts from current day)
                   </p>
                 </div>
               </label>
@@ -316,6 +332,28 @@ export function TaskModal({
               {/* Expanded Menu for Continued Task */}
               {isContinuedTask && (
                 <div className="px-3 pb-3.5 pt-1 border-t border-blue-200/50 dark:border-blue-900/40 space-y-3">
+                  {/* Start Date Indicator with Current Day / Today Reset */}
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-blue-500/10 dark:bg-blue-500/15 border border-blue-500/20">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <div className="text-[11px] text-[#1f2126] dark:text-[#eceef2] truncate">
+                        <span>Starts from: </span>
+                        <strong className="text-blue-700 dark:text-blue-300">
+                          {isToday(date) ? `Current Day (${formatDisplayDate(date)})` : formatDisplayDate(date)}
+                        </strong>
+                      </div>
+                    </div>
+                    {!isToday(date) && (
+                      <button
+                        type="button"
+                        onClick={() => setDate(getTodayISO())}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors shrink-0 shadow-2xs"
+                      >
+                        Start from Today
+                      </button>
+                    )}
+                  </div>
+
                   {/* Question Prompt */}
                   <div>
                     <label className="block text-xs font-semibold text-[#1f2126] dark:text-[#eceef2] mb-1.5">
