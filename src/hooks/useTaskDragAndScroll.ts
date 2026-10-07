@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { PlannerTask } from '../types';
-import { DragAutoScroller } from '../utils/dragAutoScroll';
 
 export interface DropCellInfo {
   date: string;
@@ -20,19 +19,13 @@ export function useTaskDragAndScroll({
   const [draggedTask, setDraggedTask] = useState<PlannerTask | null>(null);
   const [dropTarget, setDropTarget] = useState<DropCellInfo | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
-  const [scrollDirections, setScrollDirections] = useState({
-    up: false,
-    down: false,
-    left: false,
-    right: false,
-  });
 
   const draggedTaskRef = useRef<PlannerTask | null>(null);
   const dropTargetRef = useRef<DropCellInfo | null>(null);
   const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
-  const autoScrollerRef = useRef<DragAutoScroller | null>(null);
+  const animFrameRef = useRef<number | null>(null);
 
-  // Keep refs in sync
+  // Synchronize refs
   useEffect(() => {
     draggedTaskRef.current = draggedTask;
   }, [draggedTask]);
@@ -45,8 +38,9 @@ export function useTaskDragAndScroll({
     pointerPosRef.current = pointerPos;
   }, [pointerPos]);
 
-  // Identify drop target under given coordinates
+  // Identify drop target under given screen coordinates
   const detectDropTarget = useCallback((x: number, y: number): DropCellInfo | null => {
+    if (typeof document === 'undefined') return null;
     const elem = document.elementFromPoint(x, y);
     if (!elem) return null;
 
@@ -61,55 +55,33 @@ export function useTaskDragAndScroll({
     return null;
   }, []);
 
-  // Initialize auto-scroller once
-  useEffect(() => {
-    const scroller = new DragAutoScroller({
-      threshold: 85,
-      maxSpeed: 22,
-      scrollWindow: true,
-      onTargetCheck: (x, y) => {
-        const found = detectDropTarget(x, y);
-        setDropTarget(found);
-      },
-      onDirectionChange: (dirs) => {
-        setScrollDirections(dirs);
-      },
-    });
-
-    autoScrollerRef.current = scroller;
-
-    return () => {
-      scroller.stop();
-    };
-  }, [detectDropTarget]);
-
-  // Update container ref when containerId changes or element mounts
-  useEffect(() => {
-    const container = document.getElementById(containerId);
-    autoScrollerRef.current?.setContainer(container);
-  }, [containerId, isDragging]);
-
   // Complete the drop operation
   const finalizeDrop = useCallback(async () => {
     const task = draggedTaskRef.current;
     const target = dropTargetRef.current;
 
-    // Stop auto-scroller immediately
-    autoScrollerRef.current?.stop();
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    if (typeof document !== 'undefined') {
+      document.body.style.userSelect = '';
+      document.body.style.touchAction = '';
+    }
 
     setIsDragging(false);
     setDraggedTask(null);
     setDropTarget(null);
     setPointerPos(null);
-    setScrollDirections({ up: false, down: false, left: false, right: false });
+    pointerPosRef.current = null;
 
     if (task && target) {
-      // Only trigger if location actually changed
       if (task.date !== target.date || task.dayPart !== target.dayPart) {
-        // Haptic feedback if supported
+        // Haptic feedback for successful drop
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
           try {
-            navigator.vibrate([25, 40, 25]);
+            navigator.vibrate([20, 35]);
           } catch {
             // ignore
           }
@@ -119,12 +91,119 @@ export function useTaskDragAndScroll({
     }
   }, [onDropTask]);
 
-  // Global touchmove / pointermove handlers during drag
+  // Smooth edge scrolling loop running during drag
+  // Only scrolls when the finger reaches the edge boundary (e.g. dragging from Morning down to Night)
+  useEffect(() => {
+    if (!isDragging) {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      return;
+    }
+
+    const scrollLoop = () => {
+      const pos = pointerPosRef.current;
+      if (!pos) {
+        animFrameRef.current = requestAnimationFrame(scrollLoop);
+        return;
+      }
+
+      // Locate active scrollable container
+      const container =
+        document.getElementById(containerId) ||
+        document.getElementById('day-focus-scroll') ||
+        document.getElementById('daily-modal-scroll') ||
+        document.getElementById('planner-matrix-scroll') ||
+        document.querySelector('.overflow-y-auto') ||
+        document.querySelector('.overflow-auto');
+
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+
+      let rect: { top: number; bottom: number; left: number; right: number };
+      if (container && container instanceof HTMLElement) {
+        const cRect = container.getBoundingClientRect();
+        rect = {
+          top: Math.max(0, cRect.top),
+          bottom: Math.min(viewportHeight, cRect.bottom),
+          left: Math.max(0, cRect.left),
+          right: Math.min(viewportWidth, cRect.right),
+        };
+      } else {
+        rect = { top: 0, bottom: viewportHeight, left: 0, right: viewportWidth };
+      }
+
+      const EDGE_ZONE_Y = 110; // Active edge trigger zone in pixels
+      const EDGE_ZONE_X = Math.max(100, Math.round(rect.right * 0.15)); // Proportional edge zone for smooth side scrolling
+
+      let scrollDeltaY = 0;
+      let scrollDeltaX = 0;
+
+      // When dragging downwards (e.g. from Morning down towards Night)
+      if (pos.y > rect.bottom - EDGE_ZONE_Y) {
+        const depth = Math.min(1, Math.max(0, (pos.y - (rect.bottom - EDGE_ZONE_Y)) / EDGE_ZONE_Y));
+        scrollDeltaY = Math.round(4 + depth * 15); // 4px to 19px per frame
+      }
+      // When dragging upwards (e.g. from Night up towards Morning)
+      else if (pos.y < rect.top + EDGE_ZONE_Y) {
+        const depth = Math.min(1, Math.max(0, ((rect.top + EDGE_ZONE_Y) - pos.y) / EDGE_ZONE_Y));
+        scrollDeltaY = -Math.round(4 + depth * 15);
+      }
+
+      // Horizontal edge scrolling (Auto Side Scroll for Matrix table view & carousels)
+      if (pos.x > rect.right - EDGE_ZONE_X) {
+        const depth = Math.min(1, Math.max(0, (pos.x - (rect.right - EDGE_ZONE_X)) / EDGE_ZONE_X));
+        scrollDeltaX = Math.round(5 + depth * 16);
+      } else if (pos.x < rect.left + EDGE_ZONE_X) {
+        const depth = Math.min(1, Math.max(0, ((rect.left + EDGE_ZONE_X) - pos.x) / EDGE_ZONE_X));
+        scrollDeltaX = -Math.round(5 + depth * 16);
+      }
+
+      if (scrollDeltaY !== 0 || scrollDeltaX !== 0) {
+        if (container && container instanceof HTMLElement) {
+          if (scrollDeltaY !== 0) container.scrollTop += scrollDeltaY;
+          if (scrollDeltaX !== 0) container.scrollLeft += scrollDeltaX;
+        } else {
+          window.scrollBy(scrollDeltaX, scrollDeltaY);
+        }
+
+        // Also check if matrix or carousel containers need horizontal side scrolling
+        const matrixScroll = document.getElementById('planner-matrix-scroll');
+        if (matrixScroll && scrollDeltaX !== 0 && matrixScroll !== container) {
+          matrixScroll.scrollLeft += scrollDeltaX;
+        }
+        const carouselScroll = document.getElementById('day-carousel-scroll');
+        if (carouselScroll && scrollDeltaX !== 0 && carouselScroll !== container) {
+          carouselScroll.scrollLeft += scrollDeltaX;
+        }
+
+        // Drop target re-check as elements scroll under the pointer
+        const found = detectDropTarget(pos.x, pos.y);
+        if (found) {
+          setDropTarget(found);
+        }
+      }
+
+      animFrameRef.current = requestAnimationFrame(scrollLoop);
+    };
+
+    animFrameRef.current = requestAnimationFrame(scrollLoop);
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, [isDragging, containerId, detectDropTarget]);
+
+  // Global touch handlers during active drag
   useEffect(() => {
     if (!isDragging) return;
 
     const handleWindowTouchMove = (e: TouchEvent) => {
-      // Prevent browser bounce / pull-to-refresh while dragging
+      // Prevent browser default scroll during task drag to avoid layout jumps
       if (e.cancelable) {
         e.preventDefault();
       }
@@ -136,7 +215,7 @@ export function useTaskDragAndScroll({
       const y = touch.clientY;
 
       setPointerPos({ x, y });
-      autoScrollerRef.current?.updatePointer(x, y);
+      pointerPosRef.current = { x, y };
 
       const found = detectDropTarget(x, y);
       setDropTarget(found);
@@ -147,14 +226,17 @@ export function useTaskDragAndScroll({
     };
 
     const handleWindowTouchCancel = () => {
-      autoScrollerRef.current?.stop();
       setIsDragging(false);
       setDraggedTask(null);
       setDropTarget(null);
       setPointerPos(null);
+      pointerPosRef.current = null;
+      if (typeof document !== 'undefined') {
+        document.body.style.userSelect = '';
+        document.body.style.touchAction = '';
+      }
     };
 
-    // Attach non-passive touchmove for full drag control
     window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
     window.addEventListener('touchend', handleWindowTouchEnd, { passive: true });
     window.addEventListener('touchcancel', handleWindowTouchCancel, { passive: true });
@@ -166,23 +248,24 @@ export function useTaskDragAndScroll({
     };
   }, [isDragging, detectDropTarget, finalizeDrop]);
 
-  // Start touch drag (called directly from grip handle or after long press)
+  // Start touch drag (called on grip handle or task card)
   const startTouchDrag = useCallback(
     (e: React.TouchEvent | TouchEvent, task: PlannerTask) => {
       const touch = 'touches' in e ? e.touches[0] : null;
       if (!touch) return;
 
-      // Haptic bump on pick up
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         try {
-          navigator.vibrate(30);
+          navigator.vibrate(20);
         } catch {
           // ignore
         }
       }
 
-      const container = document.getElementById(containerId);
-      autoScrollerRef.current?.setContainer(container);
+      if (typeof document !== 'undefined') {
+        document.body.style.userSelect = 'none';
+        document.body.style.touchAction = 'none';
+      }
 
       const x = touch.clientX;
       const y = touch.clientY;
@@ -190,38 +273,31 @@ export function useTaskDragAndScroll({
       setIsDragging(true);
       setDraggedTask(task);
       setPointerPos({ x, y });
+      pointerPosRef.current = { x, y };
 
       const currentCell = detectDropTarget(x, y);
       setDropTarget(currentCell);
-
-      autoScrollerRef.current?.updatePointer(x, y);
-      autoScrollerRef.current?.start();
     },
-    [containerId, detectDropTarget]
+    [detectDropTarget]
   );
 
-  // Desktop HTML5 drag auto-scroll hook
+  // Desktop HTML5 drag support
   const handleDesktopDragOver = useCallback(
     (e: React.DragEvent, date: string, dayPart: string) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       setDropTarget({ date, dayPart });
-
-      const container = document.getElementById(containerId);
-      autoScrollerRef.current?.setContainer(container);
-      autoScrollerRef.current?.updatePointer(e.clientX, e.clientY);
     },
-    [containerId]
+    []
   );
 
   const handleDesktopDragLeave = useCallback(() => {
-    // leave drop target
+    // leave target
   }, []);
 
   const handleDesktopDrop = useCallback(
     async (e: React.DragEvent, date: string, dayPart: string, fallbackTaskId?: string | null) => {
       e.preventDefault();
-      autoScrollerRef.current?.stop();
       const taskId = e.dataTransfer.getData('text/plain') || fallbackTaskId;
       setDropTarget(null);
       setDraggedTask(null);
@@ -239,7 +315,6 @@ export function useTaskDragAndScroll({
     draggedTask,
     dropTarget,
     pointerPos,
-    scrollDirections,
     startTouchDrag,
     handleDesktopDragOver,
     handleDesktopDragLeave,

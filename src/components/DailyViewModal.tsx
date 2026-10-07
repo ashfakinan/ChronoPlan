@@ -8,11 +8,15 @@ import {
   Circle,
   Layers,
   GripVertical,
+  CheckSquare,
+  Check,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
-import { formatFullDate, addDays, isToday } from '../utils/dateUtils';
+import { formatFullDate, addDays, isToday, getDaysInRange } from '../utils/dateUtils';
 import { TaskModal } from './TaskModal';
 import { DragGhostOverlay } from './DragGhostOverlay';
+import { BatchMoveModal } from './BatchMoveModal';
+import { BatchTaskActionBar } from './BatchTaskActionBar';
 import { useTaskDragAndScroll } from '../hooks/useTaskDragAndScroll';
 import { PlannerTask } from '../types';
 
@@ -33,19 +37,80 @@ export function DailyViewModal({
     subjects,
     toggleTaskComplete,
     moveTask,
+    batchMoveTasks,
+    batchToggleComplete,
+    batchDeleteTasks,
     setSelectedDayForDetail,
   } = usePlanner();
 
   const [editingTask, setEditingTask] = useState<PlannerTask | null>(null);
   const [addingTaskForDayPart, setAddingTaskForDayPart] = useState<string | null>(null);
 
-  // Touch and desktop drag with auto-scrolling
+  // Batch selection state
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [isBatchMoveModalOpen, setIsBatchMoveModalOpen] = useState(false);
+
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllInSection = (taskIds: string[]) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = taskIds.length > 0 && taskIds.every((id) => next.has(id));
+      if (allSelected) {
+        taskIds.forEach((id) => next.delete(id));
+      } else {
+        taskIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const handleClearSelection = () => {
+    setSelectedTaskIds(new Set());
+    setIsSelectionMode(false);
+  };
+
+  const handleConfirmBatchMove = async (targetDate: string, targetDayPart: string) => {
+    const ids = Array.from(selectedTaskIds);
+    if (!ids.length) return;
+    await batchMoveTasks(ids, targetDate, targetDayPart);
+    handleClearSelection();
+  };
+
+  const handleBatchToggleComplete = async () => {
+    const ids = Array.from(selectedTaskIds);
+    if (!ids.length) return;
+    const selectedTasks = tasks.filter((t) => ids.includes(t.id));
+    const allCompleted = selectedTasks.every((t) => t.isCompleted);
+    await batchToggleComplete(ids, !allCompleted);
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = Array.from(selectedTaskIds);
+    if (!ids.length) return;
+    if (window.confirm(`Delete ${ids.length} selected tasks?`)) {
+      await batchDeleteTasks(ids);
+      handleClearSelection();
+    }
+  };
+
+  // Touch and desktop drag with natural finger scrolling
   const {
     isDragging,
     draggedTask,
     dropTarget,
     pointerPos,
-    scrollDirections,
     startTouchDrag,
     handleDesktopDragOver,
     handleDesktopDragLeave,
@@ -143,7 +208,24 @@ export function DailyViewModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSelectionMode(!isSelectionMode);
+                if (isSelectionMode) setSelectedTaskIds(new Set());
+              }}
+              className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors flex items-center gap-1.5 min-h-[38px] ${
+                isSelectionMode || selectedTaskIds.size > 0
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] border border-[#e5e2da] dark:border-[#292b34] hover:bg-[#eae7df]'
+              }`}
+              title="Batch select tasks to move between time blocks"
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>{isSelectionMode || selectedTaskIds.size > 0 ? 'Batch Active' : 'Select'}</span>
+            </button>
+
             <div className="hidden sm:flex items-center gap-2 bg-[#fdfcf9] dark:bg-[#1a1b20] px-3 py-1.5 rounded-xl border border-[#e5e2da] dark:border-[#292b34] text-xs">
               <span className="text-[#8c909c]">Progress:</span>
               <span className="font-semibold text-[#1f2126] dark:text-[#eceef2] tabular-nums">
@@ -196,14 +278,26 @@ export function DailyViewModal({
                       </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setAddingTaskForDayPart(dayPart)}
-                      className="px-2 py-1 text-[#606470] dark:text-[#9aa0ae] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-[#f4f2ec] dark:hover:bg-[#22242b] rounded-md transition-colors text-xs flex items-center gap-1 min-h-[36px]"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {(isSelectionMode || selectedTaskIds.size > 0) && partTasks.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectAllInSection(partTasks.map((t) => t.id))}
+                          className="px-2 py-1 text-[11px] font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-500/10 rounded-md transition-colors min-h-[36px]"
+                        >
+                          {partTasks.every((t) => selectedTaskIds.has(t.id)) ? 'Deselect All' : 'Select All'}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setAddingTaskForDayPart(dayPart)}
+                        className="px-2 py-1 text-[#606470] dark:text-[#9aa0ae] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-[#f4f2ec] dark:hover:bg-[#22242b] rounded-md transition-colors text-xs flex items-center gap-1 min-h-[36px]"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Tasks List */}
@@ -216,14 +310,22 @@ export function DailyViewModal({
                       partTasks.map((task) => {
                         const subj = getSubject(task.subjectId);
                         const isBeingDragged = draggedTask?.id === task.id;
+                        const isSelected = selectedTaskIds.has(task.id);
 
                         return (
                           <div
                             key={task.id}
-                            draggable
+                            draggable={!isSelectionMode}
                             onDragStart={(e) => handleDragStart(e, task.id)}
-                            className={`group relative flex items-start gap-2 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all cursor-grab active:cursor-grabbing select-none ${
-                              isBeingDragged
+                            onClick={() => {
+                              if (isSelectionMode || selectedTaskIds.size > 0) {
+                                toggleTaskSelection(task.id);
+                              }
+                            }}
+                            className={`group relative flex items-start gap-2 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none ${
+                              isSelected
+                                ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
+                                : isBeingDragged
                                 ? 'opacity-30 scale-95 border-dashed border-blue-500 bg-blue-500/10'
                                 : task.isCompleted
                                 ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
@@ -235,22 +337,47 @@ export function DailyViewModal({
                               style={{ backgroundColor: subj?.color || '#3B82F6' }}
                             />
 
-                            <button
-                              type="button"
-                              onClick={() => toggleTaskComplete(task.id)}
-                              className="mt-0.5 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center -ml-1"
-                              aria-label="Toggle task"
-                            >
-                              {task.isCompleted ? (
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                              ) : (
-                                <Circle className="w-4 h-4" />
-                              )}
-                            </button>
+                            {/* Selection Checkbox OR Toggle Complete */}
+                            {isSelectionMode || selectedTaskIds.size > 0 ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleTaskSelection(task.id);
+                                }}
+                                className="w-11 h-11 min-w-[44px] min-h-[44px] -ml-1 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 rounded-lg hover:bg-blue-500/10"
+                                aria-label={isSelected ? 'Deselect task' : 'Select task'}
+                              >
+                                {isSelected ? (
+                                  <div className="w-5 h-5 rounded-md bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  </div>
+                                ) : (
+                                  <div className="w-5 h-5 rounded-md border-2 border-[#8c909c] dark:border-[#525666] bg-transparent" />
+                                )}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleTaskComplete(task.id)}
+                                className="mt-0.5 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center -ml-1"
+                                aria-label="Toggle task"
+                              >
+                                {task.isCompleted ? (
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                ) : (
+                                  <Circle className="w-4 h-4" />
+                                )}
+                              </button>
+                            )}
 
                             <div
                               className="flex-1 min-w-0 cursor-pointer pt-0.5"
-                              onClick={() => setEditingTask(task)}
+                              onClick={() => {
+                                if (!isSelectionMode && selectedTaskIds.size === 0) {
+                                  setEditingTask(task);
+                                }
+                              }}
                             >
                               <div
                                 className={`text-xs font-medium leading-snug break-words ${
@@ -282,14 +409,17 @@ export function DailyViewModal({
                               </div>
                             </div>
 
-                            {/* Touch grip handle */}
+                            {/* Touch grip handle - 44x44px hit area */}
                             <div
-                              onTouchStart={(e) => startTouchDrag(e, task)}
-                              className="p-1 -mr-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-grab active:cursor-grabbing touch-none select-none flex items-center justify-center shrink-0 min-h-[32px] min-w-[24px]"
+                              onTouchStart={(e) => {
+                                e.stopPropagation();
+                                startTouchDrag(e, task);
+                              }}
+                              className="w-11 h-11 min-w-[44px] min-h-[44px] -mr-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] active:text-blue-600 active:bg-blue-500/15 rounded-xl cursor-grab active:cursor-grabbing touch-none select-none flex items-center justify-center shrink-0"
                               title="Drag to move task"
                               aria-label="Drag task"
                             >
-                              <GripVertical className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                              <GripVertical className="w-4 h-4 opacity-75 group-hover:opacity-100 transition-opacity" />
                             </div>
                           </div>
                         );
@@ -321,7 +451,6 @@ export function DailyViewModal({
         pointerPos={pointerPos}
         dropTarget={dropTarget}
         subject={draggedTask ? getSubject(draggedTask.subjectId) : undefined}
-        scrollDirections={scrollDirections}
       />
 
       {editingTask && (
@@ -342,6 +471,25 @@ export function DailyViewModal({
           onOpenSubjectModal={onOpenSubjectModal}
         />
       )}
+
+      {/* Batch Task Action Bar & Batch Move Modal */}
+      <BatchTaskActionBar
+        selectedCount={selectedTaskIds.size}
+        onOpenBatchMove={() => setIsBatchMoveModalOpen(true)}
+        onBatchToggleComplete={handleBatchToggleComplete}
+        onBatchDelete={handleBatchDelete}
+        onClearSelection={handleClearSelection}
+      />
+
+      <BatchMoveModal
+        isOpen={isBatchMoveModalOpen}
+        onClose={() => setIsBatchMoveModalOpen(false)}
+        selectedTaskCount={selectedTaskIds.size}
+        availableDayParts={dayParts}
+        availableDates={activePlanner ? getDaysInRange(activePlanner.startDate, activePlanner.endDate) : [date]}
+        initialDate={date}
+        onConfirmMove={handleConfirmBatchMove}
+      />
     </div>
   );
 }

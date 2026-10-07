@@ -40,10 +40,24 @@ interface PlannerContextType {
 
   tasks: PlannerTask[];
   createTask: (data: Omit<PlannerTask, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<PlannerTask>;
+  createBatchTasks: (tasksData: Omit<PlannerTask, 'id' | 'userId' | 'createdAt' | 'updatedAt'>[]) => Promise<PlannerTask[]>;
   updateTask: (id: string, updates: Partial<PlannerTask>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   toggleTaskComplete: (id: string) => Promise<void>;
-  moveTask: (taskId: string, targetDate: string, targetDayPart: string) => Promise<void>;
+  moveTask: (
+    taskId: string,
+    targetDate: string,
+    targetDayPart: string,
+    targetTaskId?: string,
+    position?: 'before' | 'after'
+  ) => Promise<void>;
+  batchMoveTasks: (
+    taskIds: string[],
+    targetDate: string,
+    targetDayPart: string
+  ) => Promise<void>;
+  batchToggleComplete: (taskIds: string[], isCompleted: boolean) => Promise<void>;
+  batchDeleteTasks: (taskIds: string[]) => Promise<void>;
 
   notes: ImportantNote[];
   createNote: (title: string, content: string, tag: NoteTag, date: string) => Promise<ImportantNote>;
@@ -669,6 +683,33 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     return newTask;
   };
 
+  const createBatchTasks = async (
+    tasksData: Omit<PlannerTask, 'id' | 'userId' | 'createdAt' | 'updatedAt'>[]
+  ): Promise<PlannerTask[]> => {
+    if (!tasksData.length) return [];
+    const userId = currentUser ? currentUser.uid : 'guest';
+    const now = new Date().toISOString();
+    const newTasks: PlannerTask[] = tasksData.map((data, index) => ({
+      ...data,
+      id: `${generateId('task')}_${index}`,
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    if (currentUser) {
+      try {
+        const batchCreates = newTasks.map((t) => setDoc(doc(db, 'tasks', t.id), t));
+        await Promise.all(batchCreates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, 'tasks (batch)');
+      }
+    } else {
+      setTasks((prev) => [...prev, ...newTasks]);
+    }
+    return newTasks;
+  };
+
   const updateTask = async (id: string, updates: Partial<PlannerTask>) => {
     const cleanUpdates = { ...updates, updatedAt: new Date().toISOString() };
     if (currentUser) {
@@ -700,15 +741,172 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     await updateTask(id, { isCompleted: !task.isCompleted });
   };
 
-  const moveTask = async (taskId: string, targetDate: string, targetDayPart: string) => {
+  const moveTask = async (
+    taskId: string,
+    targetDate: string,
+    targetDayPart: string,
+    targetTaskId?: string,
+    position: 'before' | 'after' = 'after'
+  ) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
-    if (task.date === targetDate && task.dayPart === targetDayPart) return;
 
-    await updateTask(taskId, {
+    // Get all tasks in destination section, sorted by order
+    const destTasks = tasks
+      .filter((t) => t.date === targetDate && t.dayPart === targetDayPart && t.id !== taskId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    let insertIndex = destTasks.length;
+    if (targetTaskId) {
+      const idx = destTasks.findIndex((t) => t.id === targetTaskId);
+      if (idx !== -1) {
+        insertIndex = position === 'before' ? idx : idx + 1;
+      }
+    }
+
+    // Insert task at target index
+    const reorderedList = [...destTasks];
+    reorderedList.splice(insertIndex, 0, {
+      ...task,
       date: targetDate,
       dayPart: targetDayPart,
     });
+
+    // Re-assign continuous order indices
+    const updates: { id: string; date: string; dayPart: string; order: number }[] = reorderedList.map(
+      (t, index) => ({
+        id: t.id,
+        date: t.date,
+        dayPart: t.dayPart,
+        order: index,
+      })
+    );
+
+    // Apply updates
+    if (currentUser) {
+      try {
+        const batchUpdates = updates.map((u) =>
+          updateDoc(doc(db, 'tasks', u.id), {
+            date: u.date,
+            dayPart: u.dayPart,
+            order: u.order,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+        await Promise.all(batchUpdates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `tasks/${taskId}`);
+      }
+    } else {
+      setTasks((prev) =>
+        prev.map((t) => {
+          const matching = updates.find((u) => u.id === t.id);
+          if (matching) {
+            return {
+              ...t,
+              date: matching.date,
+              dayPart: matching.dayPart,
+              order: matching.order,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return t;
+        })
+      );
+    }
+  };
+
+  const batchMoveTasks = async (
+    taskIds: string[],
+    targetDate: string,
+    targetDayPart: string
+  ) => {
+    if (!taskIds.length) return;
+
+    // Get all tasks in destination section not in the moving list, sorted by order
+    const destTasks = tasks
+      .filter((t) => t.date === targetDate && t.dayPart === targetDayPart && !taskIds.includes(t.id))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    // Get the tasks being moved, maintaining their current relative order
+    const movingTasks = tasks
+      .filter((t) => taskIds.includes(t.id))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    // Append moving tasks to the destination
+    const reorderedList = [...destTasks, ...movingTasks].map((t, idx) => ({
+      id: t.id,
+      date: targetDate,
+      dayPart: targetDayPart,
+      order: idx,
+    }));
+
+    if (currentUser) {
+      try {
+        const batchUpdates = reorderedList
+          .filter((u) => taskIds.includes(u.id))
+          .map((u) =>
+            updateDoc(doc(db, 'tasks', u.id), {
+              date: u.date,
+              dayPart: u.dayPart,
+              order: u.order,
+              updatedAt: new Date().toISOString(),
+            })
+          );
+        await Promise.all(batchUpdates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `tasks/batch`);
+      }
+    } else {
+      setTasks((prev) =>
+        prev.map((t) => {
+          const match = reorderedList.find((u) => u.id === t.id);
+          if (match && taskIds.includes(t.id)) {
+            return {
+              ...t,
+              date: match.date,
+              dayPart: match.dayPart,
+              order: match.order,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return t;
+        })
+      );
+    }
+  };
+
+  const batchToggleComplete = async (taskIds: string[], isCompleted: boolean) => {
+    if (!taskIds.length) return;
+    const now = new Date().toISOString();
+    if (currentUser) {
+      try {
+        const updates = taskIds.map((id) =>
+          updateDoc(doc(db, 'tasks', id), { isCompleted, updatedAt: now })
+        );
+        await Promise.all(updates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `tasks/batch`);
+      }
+    } else {
+      setTasks((prev) =>
+        prev.map((t) => (taskIds.includes(t.id) ? { ...t, isCompleted, updatedAt: now } : t))
+      );
+    }
+  };
+
+  const batchDeleteTasks = async (taskIds: string[]) => {
+    if (!taskIds.length) return;
+    if (currentUser) {
+      try {
+        const deletions = taskIds.map((id) => deleteDoc(doc(db, 'tasks', id)));
+        await Promise.all(deletions);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `tasks/batch`);
+      }
+    } else {
+      setTasks((prev) => prev.filter((t) => !taskIds.includes(t.id)));
+    }
   };
 
   // --- Notes CRUD ---
@@ -974,10 +1172,14 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
 
         tasks,
         createTask,
+        createBatchTasks,
         updateTask,
         deleteTask,
         toggleTaskComplete,
         moveTask,
+        batchMoveTasks,
+        batchToggleComplete,
+        batchDeleteTasks,
 
         notes,
         createNote,
