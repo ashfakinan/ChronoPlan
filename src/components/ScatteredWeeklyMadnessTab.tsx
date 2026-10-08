@@ -18,7 +18,6 @@ import {
   Search,
   Filter,
   Sparkles,
-  GripVertical,
   LayoutGrid,
   Columns,
   List,
@@ -76,10 +75,6 @@ export function ScatteredWeeklyMadnessTab() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
 
-  // Drag over visual state
-  const [dragOverDayId, setDragOverDayId] = useState<string | null>(null);
-  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
-
   // Active day menu dropdown
   const [activeMenuDayId, setActiveMenuDayId] = useState<string | null>(null);
 
@@ -133,44 +128,6 @@ export function ScatteredWeeklyMadnessTab() {
       await updateTask(taskId, { title: editTaskTitle.trim() });
     }
     setEditingTaskId(null);
-  };
-
-  // Drag & drop handlers
-  const handleDragStart = (e: React.DragEvent, taskId: string) => {
-    e.dataTransfer.setData('text/plain', taskId);
-    e.dataTransfer.effectAllowed = 'move';
-    setDraggedTaskId(taskId);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedTaskId(null);
-    setDragOverDayId(null);
-  };
-
-  const handleDragOver = (e: React.DragEvent, dayId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (dragOverDayId !== dayId) {
-      setDragOverDayId(dayId);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent, dayId: string) => {
-    // Only unset if leaving the current target container
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    if (dragOverDayId === dayId) {
-      setDragOverDayId(null);
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent, targetDayId: string) => {
-    e.preventDefault();
-    setDragOverDayId(null);
-    const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
-    if (taskId) {
-      await moveTaskToDay(taskId, targetDayId);
-    }
-    setDraggedTaskId(null);
   };
 
   const progressPercent =
@@ -503,18 +460,10 @@ export function ScatteredWeeklyMadnessTab() {
     const allDayTasks = tasks.filter((t) => t.dayId === day.id);
     const dayCompleted = allDayTasks.filter((t) => t.isCompleted).length;
     const isEditingThisDay = editingDayId === day.id;
-    const isDragOver = dragOverDayId === day.id;
 
     return (
       <div
-        onDragOver={(e) => handleDragOver(e, day.id)}
-        onDragLeave={(e) => handleDragLeave(e, day.id)}
-        onDrop={(e) => handleDrop(e, day.id)}
-        className={`bg-[#fdfcf9] dark:bg-[#1a1b20] border rounded-2xl flex flex-col shadow-xs transition-all ${
-          isDragOver
-            ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/20 dark:bg-blue-950/20'
-            : 'border-[#e5e2da] dark:border-[#292b34]'
-        }`}
+        className="bg-[#fdfcf9] dark:bg-[#1a1b20] border border-[#e5e2da] dark:border-[#292b34] rounded-2xl flex flex-col shadow-xs transition-all"
       >
         {/* Day Header */}
         <div className="p-3.5 border-b border-[#e5e2da] dark:border-[#292b34] flex items-center justify-between gap-2 relative bg-[#faf9f5] dark:bg-[#1c1d23] rounded-t-2xl">
@@ -745,9 +694,6 @@ export function ScatteredWeeklyMadnessTab() {
               return (
                 <div
                   key={task.id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, task.id)}
-                  onDragEnd={handleDragEnd}
                   className={`group relative p-2.5 rounded-xl border transition-all ${
                     task.isCompleted
                       ? 'bg-[#f4f2ec]/60 dark:bg-[#1a1b20]/60 border-[#e5e2da] dark:border-[#292b34] opacity-75'
@@ -786,14 +732,6 @@ export function ScatteredWeeklyMadnessTab() {
                     </div>
                   ) : (
                     <div className="flex items-start gap-2">
-                      {/* Drag Handle */}
-                      <div
-                        className="cursor-grab active:cursor-grabbing text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] pt-0.5 shrink-0"
-                        title="Drag task to another day"
-                      >
-                        <GripVertical className="w-3.5 h-3.5" />
-                      </div>
-
                       {/* Checkbox */}
                       <button
                         type="button"

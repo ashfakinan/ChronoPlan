@@ -7,17 +7,14 @@ import {
   CheckCircle2,
   Circle,
   Layers,
-  GripVertical,
   CheckSquare,
   Check,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import { formatFullDate, addDays, isToday, getDaysInRange } from '../utils/dateUtils';
 import { TaskModal } from './TaskModal';
-import { DragGhostOverlay } from './DragGhostOverlay';
 import { BatchMoveModal } from './BatchMoveModal';
 import { BatchTaskActionBar } from './BatchTaskActionBar';
-import { useTaskDragAndScroll } from '../hooks/useTaskDragAndScroll';
 import { PlannerTask } from '../types';
 
 interface DailyViewModalProps {
@@ -36,7 +33,6 @@ export function DailyViewModal({
     tasks,
     subjects,
     toggleTaskComplete,
-    moveTask,
     batchMoveTasks,
     batchToggleComplete,
     batchDeleteTasks,
@@ -103,46 +99,6 @@ export function DailyViewModal({
       await batchDeleteTasks(ids);
       handleClearSelection();
     }
-  };
-
-  // Touch and desktop drag with natural finger scrolling
-  const {
-    isDragging,
-    draggedTask,
-    dropTarget,
-    pointerPos,
-    startTouchDrag,
-    handleDesktopDragOver,
-    handleDesktopDragLeave,
-    handleDesktopDrop,
-  } = useTaskDragAndScroll({
-    onDropTask: async (taskId, targetDate, targetDayPart) => {
-      if (!date) return;
-      await moveTask(taskId, targetDate, targetDayPart);
-    },
-    containerId: 'daily-modal-scroll',
-  });
-
-  const [desktopDraggedTaskId, setDesktopDraggedTaskId] = useState<string | null>(null);
-
-  const handleDragStart = (e: React.DragEvent, taskId: string) => {
-    e.dataTransfer.setData('text/plain', taskId);
-    setDesktopDraggedTaskId(taskId);
-  };
-
-  const handleDragOver = (e: React.DragEvent, dayPart: string) => {
-    if (!date) return;
-    handleDesktopDragOver(e, date, dayPart);
-  };
-
-  const handleDragLeave = () => {
-    handleDesktopDragLeave();
-  };
-
-  const handleDrop = async (e: React.DragEvent, dayPart: string) => {
-    if (!date) return;
-    await handleDesktopDrop(e, date, dayPart, desktopDraggedTaskId);
-    setDesktopDraggedTaskId(null);
   };
 
   const getSubject = (subjectId: string) => subjects.find((s) => s.id === subjectId);
@@ -249,22 +205,11 @@ export function DailyViewModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             {dayParts.map((dayPart) => {
               const partTasks = dateTasks.filter((t) => t.dayPart === dayPart);
-              const isDropTarget = dropTarget?.dayPart === dayPart;
 
               return (
                 <div
                   key={dayPart}
-                  data-drop-target="true"
-                  data-drop-date={date}
-                  data-drop-daypart={dayPart}
-                  onDragOver={(e) => handleDragOver(e, dayPart)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, dayPart)}
-                  className={`flex flex-col rounded-xl border p-3.5 transition-all min-h-[150px] ${
-                    isDropTarget
-                      ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-500/10 dark:bg-blue-500/15'
-                      : 'border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9] dark:bg-[#1a1b20]'
-                  }`}
+                  className="flex flex-col rounded-xl border p-3.5 transition-all min-h-[150px] border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9] dark:bg-[#1a1b20]"
                 >
                   {/* Day-part Header */}
                   <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-[#f4f2ec] dark:border-[#22242b]">
@@ -304,19 +249,16 @@ export function DailyViewModal({
                   <div className="space-y-1.5 flex-1">
                     {partTasks.length === 0 ? (
                       <div className="h-full flex items-center justify-center p-4 border border-dashed border-[#e5e2da] dark:border-[#292b34] rounded-lg text-[11px] text-[#8c909c]">
-                        {isDropTarget ? '✨ Drop task here' : 'Drop task here or tap + Add'}
+                        No tasks in this section. Tap + Add
                       </div>
                     ) : (
                       partTasks.map((task) => {
                         const subj = getSubject(task.subjectId);
-                        const isBeingDragged = draggedTask?.id === task.id;
                         const isSelected = selectedTaskIds.has(task.id);
 
                         return (
                           <div
                             key={task.id}
-                            draggable={!isSelectionMode}
-                            onDragStart={(e) => handleDragStart(e, task.id)}
                             onClick={() => {
                               if (isSelectionMode || selectedTaskIds.size > 0) {
                                 toggleTaskSelection(task.id);
@@ -325,8 +267,6 @@ export function DailyViewModal({
                             className={`group relative flex items-start gap-2 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none ${
                               isSelected
                                 ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
-                                : isBeingDragged
-                                ? 'opacity-30 scale-95 border-dashed border-blue-500 bg-blue-500/10'
                                 : task.isCompleted
                                 ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                 : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
@@ -408,19 +348,6 @@ export function DailyViewModal({
                                 )}
                               </div>
                             </div>
-
-                            {/* Touch grip handle - 44x44px hit area */}
-                            <div
-                              onTouchStart={(e) => {
-                                e.stopPropagation();
-                                startTouchDrag(e, task);
-                              }}
-                              className="w-11 h-11 min-w-[44px] min-h-[44px] -mr-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] active:text-blue-600 active:bg-blue-500/15 rounded-xl cursor-grab active:cursor-grabbing touch-none select-none flex items-center justify-center shrink-0"
-                              title="Drag to move task"
-                              aria-label="Drag task"
-                            >
-                              <GripVertical className="w-4 h-4 opacity-75 group-hover:opacity-100 transition-opacity" />
-                            </div>
                           </div>
                         );
                       })
@@ -443,15 +370,6 @@ export function DailyViewModal({
           </button>
         </div>
       </div>
-
-      {/* Floating Drag Ghost Overlay */}
-      <DragGhostOverlay
-        isDragging={isDragging}
-        task={draggedTask}
-        pointerPos={pointerPos}
-        dropTarget={dropTarget}
-        subject={draggedTask ? getSubject(draggedTask.subjectId) : undefined}
-      />
 
       {editingTask && (
         <TaskModal

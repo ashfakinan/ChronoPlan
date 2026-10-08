@@ -713,7 +713,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // --- Tasks CRUD & Drag ---
+  // --- Tasks CRUD ---
   const createTask = async (
     data: Omit<PlannerTask, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ): Promise<PlannerTask> => {
