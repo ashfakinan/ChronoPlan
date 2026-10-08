@@ -26,6 +26,7 @@ import {
 import { useMadness } from '../context/MadnessContext';
 import { MadnessCategory, MadnessDay, MadnessTask } from '../types';
 import { CategoryManagerModal } from './CategoryManagerModal';
+import { AddMadnessTaskModal } from './AddMadnessTaskModal';
 
 type ViewMode = 'board' | 'focus' | 'list';
 
@@ -56,14 +57,18 @@ export function ScatteredWeeklyMadnessTab() {
   const [viewMode, setViewMode] = useState<ViewMode>('board');
   const [selectedFocusDayId, setSelectedFocusDayId] = useState<string>(days[0]?.id || '');
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
+  const [modalInitialDayId, setModalInitialDayId] = useState<string>('');
+  const [modalInitialCategoryId, setModalInitialCategoryId] = useState<string>('');
 
   // Day renaming state
   const [editingDayId, setEditingDayId] = useState<string | null>(null);
   const [editingDayName, setEditingDayName] = useState('');
 
-  // Per-day quick add input state
+  // Per-day quick add input state and refs
   const [quickTaskTexts, setQuickTaskTexts] = useState<Record<string, string>>({});
   const [quickTaskCats, setQuickTaskCats] = useState<Record<string, string>>({});
+  const inputRefs = React.useRef<Record<string, HTMLInputElement | null>>({});
 
   // Task editing inline state
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -99,13 +104,20 @@ export function ScatteredWeeklyMadnessTab() {
     setEditingDayId(null);
   };
 
-  const handleQuickAdd = async (e: React.FormEvent, dayId: string) => {
-    e.preventDefault();
+  const handleQuickAdd = async (dayId: string) => {
     const text = quickTaskTexts[dayId]?.trim();
-    if (!text) return;
+    if (!text) {
+      inputRefs.current[dayId]?.focus();
+      return;
+    }
     const catId = quickTaskCats[dayId];
     await addTask(dayId, text, catId);
     setQuickTaskTexts((prev) => ({ ...prev, [dayId]: '' }));
+    // If filter is active and doesn't match this task's category, clear filter so the task is visible
+    if (filterCategoryId && catId !== filterCategoryId) {
+      setFilterCategoryId(null);
+    }
+    inputRefs.current[dayId]?.focus();
   };
 
   const handleStartEditTask = (task: MadnessTask) => {
@@ -260,11 +272,25 @@ export function ScatteredWeeklyMadnessTab() {
                 </button>
               </div>
 
+              {/* Add Task Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setModalInitialDayId(selectedFocusDayId || days[0]?.id || '');
+                  setModalInitialCategoryId(filterCategoryId || '');
+                  setIsAddTaskModalOpen(true);
+                }}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Task
+              </button>
+
               {/* Add Day Button */}
               <button
                 type="button"
                 onClick={() => addDay()}
-                className="px-3 py-1.5 bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eeebe3] dark:hover:bg-[#2a2d36] border border-[#e5e2da] dark:border-[#292b34] text-[#1f2126] dark:text-[#eceef2] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                className="px-3 py-1.5 bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eeebe3] dark:hover:bg-[#2a2d36] border border-[#e5e2da] dark:border-[#292b34] text-[#1f2126] dark:text-[#eceef2] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 Add Day
@@ -274,7 +300,7 @@ export function ScatteredWeeklyMadnessTab() {
               <button
                 type="button"
                 onClick={() => setIsCategoryModalOpen(true)}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+                className="px-3 py-1.5 bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eeebe3] dark:hover:bg-[#2a2d36] border border-[#e5e2da] dark:border-[#292b34] text-[#1f2126] dark:text-[#eceef2] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Tag className="w-3.5 h-3.5" />
                 Categories ({categories.length})
@@ -451,6 +477,14 @@ export function ScatteredWeeklyMadnessTab() {
         isOpen={isCategoryModalOpen}
         onClose={() => setIsCategoryModalOpen(false)}
       />
+
+      {/* Add Task Modal */}
+      <AddMadnessTaskModal
+        isOpen={isAddTaskModalOpen}
+        onClose={() => setIsAddTaskModalOpen(false)}
+        initialDayId={modalInitialDayId}
+        initialCategoryId={modalInitialCategoryId}
+      />
     </div>
   );
 
@@ -589,24 +623,40 @@ export function ScatteredWeeklyMadnessTab() {
 
         {/* Quick Add Task Form in Day */}
         <div className="p-3 border-b border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9] dark:bg-[#1a1b20]">
-          <form onSubmit={(e) => handleQuickAdd(e, day.id)} className="space-y-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleQuickAdd(day.id);
+            }}
+            className="space-y-2"
+          >
             <div className="flex items-center gap-1.5">
               <input
+                ref={(el) => {
+                  inputRefs.current[day.id] = el;
+                }}
                 type="text"
                 value={quickTaskTexts[day.id] || ''}
                 onChange={(e) =>
                   setQuickTaskTexts((prev) => ({ ...prev, [day.id]: e.target.value }))
                 }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleQuickAdd(day.id);
+                  }
+                }}
                 placeholder={`+ Add task to ${day.name}...`}
                 className="flex-1 px-2.5 py-1.5 text-xs bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] rounded-lg text-[#1f2126] dark:text-[#eceef2] placeholder-[#8c909c] focus:outline-hidden focus:ring-1 focus:ring-blue-500"
               />
               <button
-                type="submit"
-                disabled={!(quickTaskTexts[day.id] || '').trim()}
-                className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+                type="button"
+                onClick={() => handleQuickAdd(day.id)}
+                className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg transition-all flex items-center gap-1 font-semibold text-xs shrink-0 cursor-pointer shadow-xs"
                 title="Add task"
               >
                 <Plus className="w-3.5 h-3.5" />
+                <span className="text-[11px]">Add</span>
               </button>
             </div>
 
@@ -670,7 +720,13 @@ export function ScatteredWeeklyMadnessTab() {
           {dayFilteredTasks.length === 0 ? (
             <div className="py-6 px-3 text-center border border-dashed border-[#e5e2da] dark:border-[#292b34] rounded-xl my-1">
               <p className="text-xs text-[#8c909c]">No tasks here yet.</p>
-              <p className="text-[10px] text-[#8c909c] mt-0.5">Drag tasks here or type above</p>
+              <button
+                type="button"
+                onClick={() => inputRefs.current[day.id]?.focus()}
+                className="mt-2 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-center gap-1 mx-auto cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add a task
+              </button>
             </div>
           ) : (
             dayFilteredTasks.map((task) => {
@@ -888,6 +944,20 @@ export function ScatteredWeeklyMadnessTab() {
               );
             })
           )}
+        </div>
+
+        {/* Bottom Add Task Button in Day Card */}
+        <div className="p-2 border-t border-[#e5e2da]/70 dark:border-[#292b34]/70 bg-[#faf9f5]/50 dark:bg-[#1c1d23]/50 rounded-b-2xl">
+          <button
+            type="button"
+            onClick={() => {
+              inputRefs.current[day.id]?.focus();
+            }}
+            className="w-full py-1 text-xs text-[#606470] dark:text-[#9aa0ae] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg flex items-center justify-center gap-1.5 font-medium transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add task to {day.name}</span>
+          </button>
         </div>
       </div>
     );

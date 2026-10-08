@@ -31,6 +31,7 @@ export function CategoryManagerModal({ isOpen, onClose }: CategoryManagerModalPr
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const nameInputRef = React.useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
 
@@ -39,11 +40,13 @@ export function CategoryManagerModal({ isOpen, onClose }: CategoryManagerModalPr
     setErrorMsg('');
     const trimmed = newCatName.trim();
     if (!trimmed) {
-      setErrorMsg('Category name cannot be empty');
+      setErrorMsg('Please enter a category name');
+      nameInputRef.current?.focus();
       return;
     }
     if (categories.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
       setErrorMsg('A category with this name already exists');
+      nameInputRef.current?.focus();
       return;
     }
 
@@ -109,6 +112,7 @@ export function CategoryManagerModal({ isOpen, onClose }: CategoryManagerModalPr
                 Category Name
               </label>
               <input
+                ref={nameInputRef}
                 type="text"
                 value={newCatName}
                 onChange={(e) => {
@@ -167,8 +171,7 @@ export function CategoryManagerModal({ isOpen, onClose }: CategoryManagerModalPr
 
               <button
                 type="submit"
-                disabled={!newCatName.trim()}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Category

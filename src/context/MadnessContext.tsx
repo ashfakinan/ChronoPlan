@@ -320,14 +320,15 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
       order: days.length,
     };
 
+    // Optimistically update local state immediately
+    setDays((prev) => [...prev, newDay]);
+
     if (currentUser) {
       try {
         await setDoc(doc(db, 'madness_days', id), newDay);
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `madness_days/${id}`);
       }
-    } else {
-      setDays((prev) => [...prev, newDay]);
     }
     return newDay;
   };
@@ -441,41 +442,73 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
     const id = generateId('mtask');
     const userId = currentUser ? currentUser.uid : 'guest';
     const dayTasks = tasks.filter((t) => t.dayId === dayId);
+    const nowIso = new Date().toISOString();
+
+    const cleanCat = categoryId && categoryId.trim() ? categoryId.trim() : undefined;
+    const cleanNotes = notes && notes.trim() ? notes.trim() : undefined;
+
     const newTask: MadnessTask = {
       id,
       userId,
       dayId,
       title: title.trim(),
-      categoryId: categoryId || undefined,
+      categoryId: cleanCat,
       isCompleted: false,
-      notes: notes?.trim() || undefined,
+      notes: cleanNotes,
       order: dayTasks.length,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
     };
 
+    // Optimistically update local state immediately
+    setTasks((prev) => [...prev, newTask]);
+
     if (currentUser) {
+      // Build safe object for Firestore (NO undefined values)
+      const firestoreDoc: Record<string, any> = {
+        id,
+        userId,
+        dayId,
+        title: title.trim(),
+        isCompleted: false,
+        order: dayTasks.length,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      if (cleanCat) {
+        firestoreDoc.categoryId = cleanCat;
+      }
+      if (cleanNotes) {
+        firestoreDoc.notes = cleanNotes;
+      }
+
       try {
-        await setDoc(doc(db, 'madness_tasks', id), newTask);
+        await setDoc(doc(db, 'madness_tasks', id), firestoreDoc);
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `madness_tasks/${id}`);
       }
-    } else {
-      setTasks((prev) => [...prev, newTask]);
     }
     return newTask;
   };
 
   const updateTask = async (taskId: string, updates: Partial<MadnessTask>) => {
-    const cleanUpdates = { ...updates, updatedAt: new Date().toISOString() };
+    const nowIso = new Date().toISOString();
+    const cleanUpdates: Record<string, any> = { updatedAt: nowIso };
+
+    Object.entries(updates).forEach(([key, val]) => {
+      if (val !== undefined) {
+        cleanUpdates[key] = val;
+      }
+    });
+
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updates, updatedAt: nowIso } : t)));
+
     if (currentUser) {
       try {
         await updateDoc(doc(db, 'madness_tasks', taskId), cleanUpdates);
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `madness_tasks/${taskId}`);
       }
-    } else {
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...cleanUpdates } : t)));
     }
   };
 
