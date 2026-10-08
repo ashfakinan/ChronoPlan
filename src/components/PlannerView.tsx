@@ -8,10 +8,7 @@ import {
   Search,
   Settings,
   Layers,
-  ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   LayoutGrid,
   CalendarDays,
   MoveRight,
@@ -19,7 +16,6 @@ import {
   ArrowLeftRight,
   CheckSquare,
   Check,
-  Sparkles,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import {
@@ -81,43 +77,6 @@ export function PlannerView() {
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isBatchMoveModalOpen, setIsBatchMoveModalOpen] = useState(false);
-
-  // Auto Side Scroll Feature state & refs
-  const [autoSideScroll, setAutoSideScroll] = useState<boolean>(true);
-  const dayCarouselRef = React.useRef<HTMLDivElement | null>(null);
-
-  const handleSideScrollCarousel = (direction: 'left' | 'right') => {
-    if (!dayCarouselRef.current) return;
-    const scrollAmount = 240;
-    dayCarouselRef.current.scrollBy({
-      left: direction === 'left' ? -scrollAmount : scrollAmount,
-      behavior: 'smooth',
-    });
-  };
-
-  const handleSideScrollMatrix = (direction: 'left' | 'right' | 'today') => {
-    const container = document.getElementById('planner-matrix-scroll');
-    if (!container) return;
-    if (direction === 'left') {
-      container.scrollBy({ left: -320, behavior: 'smooth' });
-    } else if (direction === 'right') {
-      container.scrollBy({ left: 320, behavior: 'smooth' });
-    } else if (direction === 'today') {
-      const todayStr = getTodayISO();
-      const targetCell =
-        container.querySelector<HTMLElement>(`[data-drop-date="${todayStr}"]`) ||
-        container.querySelector<HTMLElement>(`[data-matrix-header-date="${todayStr}"]`);
-      if (targetCell) {
-        targetCell.scrollIntoView({
-          behavior: 'smooth',
-          inline: 'center',
-          block: 'nearest',
-        });
-      } else {
-        container.scrollTo({ left: 0, behavior: 'smooth' });
-      }
-    }
-  };
 
   const toggleTaskSelection = (taskId: string) => {
     setSelectedTaskIds((prev) => {
@@ -252,32 +211,6 @@ export function PlannerView() {
       }
     }
   }, [days, mobileSelectedDate]);
-
-  // Auto Side Scroll for Day Carousel in Day Focus mode
-  React.useEffect(() => {
-    if (autoSideScroll && mobileSelectedDate && dayCarouselRef.current) {
-      const activeEl = dayCarouselRef.current.querySelector<HTMLElement>(
-        `[data-day-pill="${mobileSelectedDate}"]`
-      );
-      if (activeEl) {
-        activeEl.scrollIntoView({
-          behavior: 'smooth',
-          inline: 'center',
-          block: 'nearest',
-        });
-      }
-    }
-  }, [mobileSelectedDate, autoSideScroll]);
-
-  // Auto Side Scroll Matrix to Today on mount / orientation switch
-  React.useEffect(() => {
-    if (autoSideScroll && activePlanner) {
-      const timer = window.setTimeout(() => {
-        handleSideScrollMatrix('today');
-      }, 350);
-      return () => window.clearTimeout(timer);
-    }
-  }, [activePlanner?.id, autoSideScroll, matrixOrientation]);
 
   const dayParts = useMemo(() => {
     return activePlanner?.dayParts || ['Morning', 'Afternoon', 'Evening', 'Night', 'Self Study'];
@@ -466,46 +399,6 @@ export function PlannerView() {
             />
           </div>
 
-          {/* Auto Side Scroll Control */}
-          <div className="flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
-            <button
-              type="button"
-              onClick={() => handleSideScrollMatrix('left')}
-              className="p-1 text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] rounded transition-colors min-h-[30px] min-w-[28px] flex items-center justify-center"
-              title="Side scroll left"
-              aria-label="Side scroll left"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setAutoSideScroll(!autoSideScroll)}
-              className={`px-2 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[30px] ${
-                autoSideScroll
-                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-blue-600 dark:text-blue-400 font-semibold shadow-2xs'
-                  : 'text-[#606470] dark:text-[#9aa0ae]'
-              }`}
-              title="Toggle Auto Side Scroll feature"
-            >
-              <ArrowLeftRight className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-              <span className="hidden xl:inline">Auto Side Scroll</span>
-              <span className={`text-[10px] px-1 py-0.2 rounded font-bold ${
-                autoSideScroll ? 'bg-blue-600/10 text-blue-600 dark:text-blue-400' : 'bg-gray-200 dark:bg-gray-800 text-gray-500'
-              }`}>
-                {autoSideScroll ? 'ON' : 'OFF'}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSideScrollMatrix('right')}
-              className="p-1 text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] rounded transition-colors min-h-[30px] min-w-[28px] flex items-center justify-center"
-              title="Side scroll right"
-              aria-label="Side scroll right"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
           {/* Batch Selection Toggle Button */}
           <button
             type="button"
@@ -560,70 +453,47 @@ export function PlannerView() {
         id="day-focus-scroll"
         className={`md:hidden flex-1 overflow-y-auto ${mobileViewMode === 'day-focus' ? 'block' : 'hidden'}`}
       >
-        {/* Horizontal Day Selector Carousel with Auto Side Scroll */}
-        <div className="sticky top-0 z-10 bg-[#fdfcf9] dark:bg-[#1a1b20] border-b border-[#e5e2da] dark:border-[#292b34] px-2 py-2">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => handleSideScrollCarousel('left')}
-              className="p-1.5 rounded-lg text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] hover:bg-[#f4f2ec] dark:hover:bg-[#22242b] transition-colors shrink-0 min-h-[44px] min-w-[32px] flex items-center justify-center"
-              title="Side scroll left"
-              aria-label="Side scroll days left"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
+        {/* Horizontal Day Selector Carousel */}
+        <div className="sticky top-0 z-10 bg-[#fdfcf9] dark:bg-[#1a1b20] border-b border-[#e5e2da] dark:border-[#292b34] px-3 py-2">
+          <div
+            id="day-carousel-scroll"
+            className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none"
+          >
+            {days.map((d) => {
+              const dayTasks = filteredTasks.filter((t) => t.date === d);
+              const done = dayTasks.filter((t) => t.isCompleted).length;
+              const isSelected = mobileSelectedDate === d;
+              const isCurr = isToday(d);
 
-            <div
-              id="day-carousel-scroll"
-              ref={dayCarouselRef}
-              className="flex-1 flex gap-1.5 overflow-x-auto pb-1 scrollbar-none scroll-smooth"
-            >
-              {days.map((d) => {
-                const dayTasks = filteredTasks.filter((t) => t.date === d);
-                const done = dayTasks.filter((t) => t.isCompleted).length;
-                const isSelected = mobileSelectedDate === d;
-                const isCurr = isToday(d);
-
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    data-day-pill={d}
-                    onClick={() => setMobileSelectedDate(d)}
-                    className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl border transition-all shrink-0 min-w-[58px] min-h-[50px] ${
-                      isSelected
-                        ? 'bg-[#1f2126] text-[#fdfcf9] border-[#1f2126] dark:bg-[#eceef2] dark:text-[#121317] dark:border-[#eceef2] shadow-xs'
-                        : 'bg-[#f4f2ec] dark:bg-[#22242b] border-[#e5e2da] dark:border-[#292b34] text-[#606470] dark:text-[#9aa0ae]'
-                    }`}
-                  >
-                    <span className="text-[10px] font-bold uppercase tracking-wider">
-                      {getWeekdayName(d)}
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  data-day-pill={d}
+                  onClick={() => setMobileSelectedDate(d)}
+                  className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl border transition-all shrink-0 min-w-[58px] min-h-[50px] ${
+                    isSelected
+                      ? 'bg-[#1f2126] text-[#fdfcf9] border-[#1f2126] dark:bg-[#eceef2] dark:text-[#121317] dark:border-[#eceef2] shadow-xs'
+                      : 'bg-[#f4f2ec] dark:bg-[#22242b] border-[#e5e2da] dark:border-[#292b34] text-[#606470] dark:text-[#9aa0ae]'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider">
+                    {getWeekdayName(d)}
+                  </span>
+                  <span className="text-xs font-black mt-0.5">
+                    {formatShortDate(d).split(' ')[1]}
+                  </span>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    {isCurr && (
+                      <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-blue-400' : 'bg-blue-600'}`} />
+                    )}
+                    <span className="text-[9px] opacity-80">
+                      {done}/{dayTasks.length}
                     </span>
-                    <span className="text-xs font-black mt-0.5">
-                      {formatShortDate(d).split(' ')[1]}
-                    </span>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      {isCurr && (
-                        <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-blue-400' : 'bg-blue-600'}`} />
-                      )}
-                      <span className="text-[9px] opacity-80">
-                        {done}/{dayTasks.length}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handleSideScrollCarousel('right')}
-              className="p-1.5 rounded-lg text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] hover:bg-[#f4f2ec] dark:hover:bg-[#22242b] transition-colors shrink-0 min-h-[44px] min-w-[32px] flex items-center justify-center"
-              title="Side scroll right"
-              aria-label="Side scroll days right"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -681,6 +551,9 @@ export function PlannerView() {
                   data-drop-target="true"
                   data-drop-date={mobileSelectedDate}
                   data-drop-daypart={dayPart}
+                  onDragOver={(e) => handleDragOver(e, mobileSelectedDate, dayPart)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, mobileSelectedDate, dayPart)}
                   className={`rounded-xl border transition-all p-3 shadow-2xs ${
                     isSectionDropTarget
                       ? 'border-blue-500 ring-2 ring-blue-500/60 bg-blue-500/15 dark:bg-blue-500/20 scale-[1.01]'
@@ -740,6 +613,8 @@ export function PlannerView() {
                         return (
                           <div
                             key={task.id}
+                            draggable={!isSelectionMode}
+                            onDragStart={(e) => handleDragStart(e, task.id)}
                             className={`flex items-start justify-between gap-2 p-2 rounded-lg border transition-all ${
                               isSelected
                                 ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
@@ -867,59 +742,9 @@ export function PlannerView() {
       {/* MATRIX TABLE VIEW (Days on Left vertically, Day-Parts horizontally at top) */}
       <div className={`flex-1 overflow-auto p-2 sm:p-4 ${mobileViewMode === 'matrix' ? 'block' : 'hidden md:block'}`}>
         <div className="inline-block min-w-full align-top">
-          {/* Quick Matrix Side Scroll Navigation Bar */}
-          <div className="flex items-center justify-between pb-2 px-1 text-xs flex-wrap gap-2">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-[#606470] dark:text-[#9aa0ae] flex items-center gap-1">
-                <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span className="hidden sm:inline">Side Scroll:</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => handleSideScrollMatrix('left')}
-                className="px-2.5 py-1 bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] text-[#1f2126] dark:text-[#eceef2] rounded-lg font-medium transition-colors flex items-center gap-1 border border-[#e5e2da] dark:border-[#292b34] min-h-[30px]"
-                title="Scroll matrix left"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span>Left</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSideScrollMatrix('today')}
-                className="px-2.5 py-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-700 dark:text-blue-400 rounded-lg font-semibold transition-colors flex items-center gap-1 border border-blue-500/20 min-h-[30px]"
-                title="Auto scroll to Today"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Today</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSideScrollMatrix('right')}
-                className="px-2.5 py-1 bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] text-[#1f2126] dark:text-[#eceef2] rounded-lg font-medium transition-colors flex items-center gap-1 border border-[#e5e2da] dark:border-[#292b34] min-h-[30px]"
-                title="Scroll matrix right"
-              >
-                <span>Right</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setAutoSideScroll(!autoSideScroll)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 border min-h-[30px] ${
-                autoSideScroll
-                  ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-800'
-                  : 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#8c909c] border-[#e5e2da] dark:border-[#292b34]'
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${autoSideScroll ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
-              <span>Auto Side Scroll: {autoSideScroll ? 'Active' : 'Off'}</span>
-            </button>
-          </div>
-
           <div
             id="planner-matrix-scroll"
-            className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-auto max-h-[calc(100vh-12rem)] scroll-smooth"
+            className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-auto max-h-[calc(100vh-12rem)]"
           >
             <table className="border-collapse table-auto min-w-full text-left">
               {/* ========================================================= */}

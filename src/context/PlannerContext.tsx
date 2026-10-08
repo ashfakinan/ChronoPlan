@@ -270,18 +270,11 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser, planners, subjects, tasks, notes, schedules, todos]);
 
-  // Check if Morning Report should appear
+  // Morning Report: Never popup automatically on open (annoying to user)
   useEffect(() => {
-    const today = getTodayISO();
-    const lastDismissed = currentUser
-      ? userProfile?.lastReportDismissedDate
-      : localStorage.getItem('cp_report_dismissed_date');
-
-    if (lastDismissed !== today) {
-      // It's a new day! Trigger the morning review report
-      setShowMorningReport(true);
-    }
-  }, [currentUser, userProfile?.lastReportDismissedDate]);
+    // Keep showMorningReport false by default on open
+    setShowMorningReport(false);
+  }, []);
 
   const dismissMorningReport = async () => {
     const today = getTodayISO();

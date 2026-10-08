@@ -6,21 +6,11 @@ export function AppUpdateToast() {
   const [toastMessage, setToastMessage] = useState('New version ready');
 
   useEffect(() => {
-    // Check if app just updated
-    const lastVersion = localStorage.getItem('cp_app_version');
-    const CURRENT_VERSION = '1.7.1';
+    // Record current version quietly without showing annoying popups on load
+    const CURRENT_VERSION = '1.7.2';
+    localStorage.setItem('cp_app_version', CURRENT_VERSION);
 
-    if (lastVersion && lastVersion !== CURRENT_VERSION) {
-      setToastMessage('✨ Updated: Continued tasks start from current day (Today)!');
-      setShowToast(true);
-      const timer = setTimeout(() => setShowToast(false), 5000);
-      localStorage.setItem('cp_app_version', CURRENT_VERSION);
-      return () => clearTimeout(timer);
-    } else if (!lastVersion) {
-      localStorage.setItem('cp_app_version', CURRENT_VERSION);
-    }
-
-    // Custom event or check
+    // Only listen for explicit system updates if triggered
     const handleUpdateReady = () => {
       setToastMessage('✨ Update ready. Tap to refresh.');
       setShowToast(true);
