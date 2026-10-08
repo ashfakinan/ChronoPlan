@@ -72,6 +72,36 @@ export interface DailyTodo {
   updatedAt?: string;
 }
 
+export interface MadnessCategory {
+  id: string;
+  userId?: string;
+  name: string;
+  color: string; // Hex color e.g. "#3B82F6"
+  createdAt?: string;
+}
+
+export interface MadnessDay {
+  id: string;
+  userId?: string;
+  name: string; // e.g. "Day 1", "Day 2", or user custom name
+  order: number;
+  notes?: string;
+}
+
+export interface MadnessTask {
+  id: string;
+  userId?: string;
+  dayId: string; // Links to MadnessDay.id
+  title: string;
+  categoryId?: string; // Links to MadnessCategory.id
+  isCompleted: boolean;
+  notes?: string;
+  order: number;
+  priority?: Priority;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -83,4 +113,4 @@ export interface UserProfile {
   updatedAt?: string;
 }
 
-export type ActiveTab = 'planner' | 'todos' | 'calendar' | 'analytics';
+export type ActiveTab = 'planner' | 'todos' | 'calendar' | 'analytics' | 'madness';

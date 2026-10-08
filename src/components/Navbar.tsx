@@ -13,10 +13,12 @@ import {
   Layers,
   FileText,
   RefreshCw,
+  Shuffle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { usePlanner } from '../context/PlannerContext';
+import { useMadness } from '../context/MadnessContext';
 import { ActiveTab } from '../types';
 import { getTodayISO } from '../utils/dateUtils';
 import { PlannerModal } from './PlannerModal';
@@ -38,6 +40,7 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
     setShowMorningReport,
     todos,
   } = usePlanner();
+  const { pendingTasksCount: pendingMadnessTasks } = useMadness();
 
   const [isPlannerDropdownOpen, setIsPlannerDropdownOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -124,6 +127,24 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
               {pendingTodosToday > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-600 text-white">
                   {pendingTodosToday}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('madness')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 min-h-[38px] ${
+                activeTab === 'madness'
+                  ? 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#1f2126] dark:text-[#eceef2] font-semibold'
+                  : 'hover:text-[#1f2126] dark:hover:text-[#eceef2]'
+              }`}
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              Weekly Madness
+              {pendingMadnessTasks > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
+                  {pendingMadnessTasks}
                 </span>
               )}
             </button>

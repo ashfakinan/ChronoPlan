@@ -14,9 +14,11 @@ import {
   X,
   Trash2,
   Type,
+  Shuffle,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
-import { NoteTag, ImportantNote, FixedSchedule } from '../types';
+import { useMadness } from '../context/MadnessContext';
+import { NoteTag, ImportantNote, FixedSchedule, ActiveTab } from '../types';
 import { formatShortDate } from '../utils/dateUtils';
 import { NoteModal } from './NoteModal';
 import { ScheduleModal } from './ScheduleModal';
@@ -25,9 +27,10 @@ import { PWAInstallButton } from './PWAInstallButton';
 interface SidebarProps {
   isOpenOnMobile?: boolean;
   onCloseMobile?: () => void;
+  setActiveTab?: (tab: ActiveTab) => void;
 }
 
-export function Sidebar({ isOpenOnMobile, onCloseMobile }: SidebarProps) {
+export function Sidebar({ isOpenOnMobile, onCloseMobile, setActiveTab }: SidebarProps) {
   const {
     notes,
     toggleNoteDone,
@@ -38,6 +41,7 @@ export function Sidebar({ isOpenOnMobile, onCloseMobile }: SidebarProps) {
     deleteSchedule,
     activePlanner,
   } = usePlanner();
+  const { pendingTasksCount: pendingMadnessTasks } = useMadness();
 
   const [activeTagFilter, setActiveTagFilter] = useState<string>('All');
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
@@ -111,6 +115,39 @@ export function Sidebar({ isOpenOnMobile, onCloseMobile }: SidebarProps) {
 
   const content = (
     <div className="flex-1 overflow-y-auto divide-y divide-[#e5e2da] dark:divide-[#292b34]">
+      {/* Scattered Weekly Madness Quick Access */}
+      {setActiveTab && (
+        <div className="p-3 bg-gradient-to-r from-indigo-50/70 to-blue-50/70 dark:from-indigo-950/30 dark:to-blue-950/30">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('madness');
+              onCloseMobile?.();
+            }}
+            className="w-full px-3 py-2 bg-[#fdfcf9] dark:bg-[#1a1b20] hover:bg-white dark:hover:bg-[#22242b] border border-indigo-200 dark:border-indigo-900/60 rounded-xl text-left flex items-center justify-between shadow-2xs transition-all group"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                <Shuffle className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-[#1f2126] dark:text-[#eceef2] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  Weekly Madness
+                </div>
+                <div className="text-[10px] text-[#8c909c]">
+                  Freeform scattered tasks
+                </div>
+              </div>
+            </div>
+            {pendingMadnessTasks > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
+                {pendingMadnessTasks}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* 1. Important Notes Section */}
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">

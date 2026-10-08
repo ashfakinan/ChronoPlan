@@ -113,6 +113,50 @@
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "userId", "text", "date", "isCompleted"]
+    },
+    "MadnessCategory": {
+      "title": "MadnessCategory",
+      "description": "Category for Scattered Weekly Madness tasks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "color": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "name", "color"]
+    },
+    "MadnessDay": {
+      "title": "MadnessDay",
+      "description": "Customizable day column for Scattered Weekly Madness",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "order": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "userId", "name", "order"]
+    },
+    "MadnessTask": {
+      "title": "MadnessTask",
+      "description": "Freeform task in Scattered Weekly Madness",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "dayId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 300 },
+        "categoryId": { "type": "string", "maxLength": 128 },
+        "isCompleted": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "dayId", "title", "isCompleted"]
     }
   },
   "firestore": {
@@ -143,6 +187,18 @@
     "/todos/{todoId}": {
       "schema": "DailyTodo",
       "description": "Daily to-do checklist items"
+    },
+    "/madness_categories/{categoryId}": {
+      "schema": "MadnessCategory",
+      "description": "Categories for Scattered Weekly Madness"
+    },
+    "/madness_days/{dayId}": {
+      "schema": "MadnessDay",
+      "description": "Days for Scattered Weekly Madness"
+    },
+    "/madness_tasks/{taskId}": {
+      "schema": "MadnessTask",
+      "description": "Tasks for Scattered Weekly Madness"
     }
   }
 }

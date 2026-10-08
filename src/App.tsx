@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { PlannerProvider } from './context/PlannerContext';
+import { MadnessProvider } from './context/MadnessContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { PlannerView } from './components/PlannerView';
 import { DailyTodoTab } from './components/DailyTodoTab';
+import { ScatteredWeeklyMadnessTab } from './components/ScatteredWeeklyMadnessTab';
 import { CalendarTab } from './components/CalendarTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
 import { MorningReportModal } from './components/MorningReportModal';
@@ -34,12 +36,14 @@ function MainApp() {
         <Sidebar
           isOpenOnMobile={isMobileSidebarOpen}
           onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          setActiveTab={setActiveTab}
         />
 
         {/* Tab Content */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           {activeTab === 'planner' && <PlannerView />}
           {activeTab === 'todos' && <DailyTodoTab />}
+          {activeTab === 'madness' && <ScatteredWeeklyMadnessTab />}
           {activeTab === 'calendar' && <CalendarTab />}
           {activeTab === 'analytics' && <AnalyticsTab />}
         </main>
@@ -72,7 +76,9 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <PlannerProvider>
-          <MainApp />
+          <MadnessProvider>
+            <MainApp />
+          </MadnessProvider>
         </PlannerProvider>
       </AuthProvider>
     </ThemeProvider>
