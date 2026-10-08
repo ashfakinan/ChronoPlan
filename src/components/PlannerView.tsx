@@ -16,6 +16,9 @@ import {
   ArrowLeftRight,
   CheckSquare,
   Check,
+  X,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import {
@@ -49,6 +52,8 @@ export function PlannerView() {
     batchDeleteTasks,
     selectedDayForDetail,
     setSelectedDayForDetail,
+    autoRolloverNotice,
+    dismissAutoRolloverNotice,
   } = usePlanner();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -194,23 +199,56 @@ export function PlannerView() {
     }
   };
 
-  // Compute days in range for active planner
-  const days = useMemo(() => {
+  const todayStr = getTodayISO();
+
+  // Compute all days in range for active planner
+  const allDays = useMemo(() => {
     if (!activePlanner) return [];
     return getDaysInRange(activePlanner.startDate, activePlanner.endDate);
   }, [activePlanner]);
 
-  // Set initial mobile selected date
+  // Check if a previous day (date < todayStr) has all tasks completed
+  const isDayCompletedPastDay = (dateStr: string) => {
+    if (dateStr >= todayStr) return false;
+    const dayTasks = tasks.filter((t) => t.plannerId === activePlanner?.id && t.date === dateStr);
+    return dayTasks.length === 0 || dayTasks.every((t) => t.isCompleted);
+  };
+
+  // Toggle to show completed past days if user explicitly wants to review them
+  const [showCompletedPastDays, setShowCompletedPastDays] = useState<boolean>(false);
+
+  // Count of previous completed days that are hidden
+  const hiddenPastDaysCount = useMemo(() => {
+    return allDays.filter((d) => isDayCompletedPastDay(d)).length;
+  }, [allDays, tasks, activePlanner, todayStr]);
+
+  // Visible days in planner view:
+  // "when previous Day's all task is completed in planner view remove that from sight and make the current day TOP"
+  const visibleDays = useMemo(() => {
+    if (!allDays.length) return [];
+    if (showCompletedPastDays) return allDays;
+
+    const filtered = allDays.filter((d) => !isDayCompletedPastDay(d));
+    // If all days would be filtered out (e.g. past archived planner), fallback to allDays so view isn't empty
+    if (filtered.length === 0) return allDays;
+    return filtered;
+  }, [allDays, showCompletedPastDays, tasks, activePlanner, todayStr]);
+
+  // Alias days to visibleDays so all matrix views render current day at the TOP and hide completed past days
+  const days = visibleDays;
+
+  // Set initial mobile selected date to today or first visible day
   React.useEffect(() => {
-    if (days.length > 0 && !mobileSelectedDate) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (days.includes(todayStr)) {
-        setMobileSelectedDate(todayStr);
-      } else {
-        setMobileSelectedDate(days[0]);
+    if (visibleDays.length > 0) {
+      if (!mobileSelectedDate || !visibleDays.includes(mobileSelectedDate)) {
+        if (visibleDays.includes(todayStr)) {
+          setMobileSelectedDate(todayStr);
+        } else {
+          setMobileSelectedDate(visibleDays[0]);
+        }
       }
     }
-  }, [days, mobileSelectedDate]);
+  }, [visibleDays, mobileSelectedDate, todayStr]);
 
   const dayParts = useMemo(() => {
     return activePlanner?.dayParts || ['Morning', 'Afternoon', 'Evening', 'Night', 'Self Study'];
@@ -318,10 +356,19 @@ export function PlannerView() {
             </button>
           </div>
           {/* Unboxed clean metadata */}
-          <div className="flex items-center gap-1.5 text-[11px] text-[#606470] dark:text-[#9aa0ae] mt-0.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-[#606470] dark:text-[#9aa0ae] mt-0.5 flex-wrap">
             <span>{formatDisplayDate(activePlanner.startDate)} – {formatDisplayDate(activePlanner.endDate)}</span>
             <span aria-hidden="true">·</span>
-            <span>{days.length} Days</span>
+            <span>{visibleDays.length} {visibleDays.length === 1 ? 'Day' : 'Days'}</span>
+            {hiddenPastDaysCount > 0 && !showCompletedPastDays && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1">
+                  <span>Current day is TOP</span>
+                  <span className="text-[10px] opacity-75">({hiddenPastDaysCount} completed past {hiddenPastDaysCount === 1 ? 'day' : 'days'} hidden)</span>
+                </span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <span className="font-semibold text-emerald-700 dark:text-emerald-400">
               {completedTasksCount}/{totalTasks} Done ({overallRate}%)
@@ -331,6 +378,31 @@ export function PlannerView() {
 
         {/* View Controls & Filters */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Completed Past Days Toggle (when past days with completed tasks exist) */}
+          {hiddenPastDaysCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowCompletedPastDays(!showCompletedPastDays)}
+              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all flex items-center gap-1.5 border min-h-[34px] ${
+                showCompletedPastDays
+                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 font-semibold'
+                  : 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#606470] dark:text-[#9aa0ae] border-[#e5e2da] dark:border-[#292b34] hover:text-[#1f2126] dark:hover:text-[#eceef2]'
+              }`}
+              title={
+                showCompletedPastDays
+                  ? 'Hide completed past days to keep current day at top'
+                  : 'View past completed days'
+              }
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>
+                {showCompletedPastDays
+                  ? `Hide ${hiddenPastDaysCount} completed past ${hiddenPastDaysCount === 1 ? 'day' : 'days'}`
+                  : `${hiddenPastDaysCount} past completed ${hiddenPastDaysCount === 1 ? 'day' : 'days'} hidden`}
+              </span>
+            </button>
+          )}
+
           {/* Orientation Switcher (Days on Left vs Days on Top) */}
           <div className="hidden lg:flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
             <button
@@ -436,8 +508,7 @@ export function PlannerView() {
           <button
             type="button"
             onClick={() => {
-              const todayStr = getTodayISO();
-              const defaultDate = days.includes(todayStr) ? todayStr : (mobileSelectedDate || todayStr);
+              const defaultDate = visibleDays.includes(todayStr) ? todayStr : (mobileSelectedDate || visibleDays[0] || todayStr);
               handleOpenAddTask(defaultDate, dayParts[0] || 'Morning');
             }}
             className="px-3 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 min-h-[34px]"
@@ -447,6 +518,26 @@ export function PlannerView() {
           </button>
         </div>
       </div>
+
+      {/* Automatic Rollover Notice Banner */}
+      {autoRolloverNotice && autoRolloverNotice.count > 0 && (
+        <div className="mx-3 sm:mx-4 mt-2 mb-1 px-3.5 py-2 rounded-xl bg-blue-500/10 dark:bg-blue-500/15 border border-blue-500/25 flex items-center justify-between text-xs text-blue-900 dark:text-blue-200 animate-in fade-in shrink-0">
+          <div className="flex items-center gap-2">
+            <MoveRight className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span>
+              <strong>{autoRolloverNotice.count}</strong> unfinished task{autoRolloverNotice.count > 1 ? 's' : ''} from previous {autoRolloverNotice.count > 1 ? 'days were' : 'day was'} automatically moved to <strong>Today</strong> without requiring confirmation.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={dismissAutoRolloverNotice}
+            className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 rounded-md transition-colors"
+            aria-label="Dismiss notice"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* MOBILE DAY FOCUS MODE (When on mobile and mobileViewMode === 'day-focus') */}
       <div
@@ -823,6 +914,11 @@ export function PlannerView() {
                                     Today
                                   </span>
                                 )}
+                                {!isCurrent && dateStr < todayStr && isDayCompletedPastDay(dateStr) && (
+                                  <span className="px-1.5 py-0.2 text-[9px] font-semibold bg-emerald-600/15 text-emerald-700 dark:text-emerald-400 rounded-md">
+                                    Done
+                                  </span>
+                                )}
                               </div>
 
                               <div className="flex items-center justify-between mt-1 text-[11px] text-[#606470] dark:text-[#9aa0ae]">
@@ -1042,6 +1138,11 @@ export function PlannerView() {
                               {isCurrent && (
                                 <span className="px-1.5 py-0.2 text-[10px] font-bold bg-blue-600 text-white rounded-md">
                                   Today
+                                </span>
+                              )}
+                              {!isCurrent && dateStr < todayStr && isDayCompletedPastDay(dateStr) && (
+                                <span className="px-1.5 py-0.2 text-[9px] font-semibold bg-emerald-600/15 text-emerald-700 dark:text-emerald-400 rounded-md">
+                                  Done
                                 </span>
                               )}
                             </div>
@@ -1305,7 +1406,7 @@ export function PlannerView() {
                 }}
                 className="w-full p-2 text-xs bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] rounded-lg text-[#1f2126] dark:text-[#eceef2]"
               >
-                {days.map((d) => (
+                {allDays.map((d) => (
                   <option key={d} value={d}>
                     {formatFullDate(d)} {isToday(d) ? '(Today)' : ''}
                   </option>
@@ -1369,8 +1470,8 @@ export function PlannerView() {
         onClose={() => setIsBatchMoveModalOpen(false)}
         selectedTaskCount={selectedTaskIds.size}
         availableDayParts={dayParts}
-        availableDates={days}
-        initialDate={mobileSelectedDate || days[0] || (activePlanner?.startDate ?? '')}
+        availableDates={allDays}
+        initialDate={mobileSelectedDate || visibleDays[0] || (activePlanner?.startDate ?? '')}
         onConfirmMove={handleConfirmBatchMove}
       />
     </div>

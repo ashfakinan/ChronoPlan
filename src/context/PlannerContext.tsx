@@ -82,6 +82,8 @@ interface PlannerContextType {
   showMorningReport: boolean;
   setShowMorningReport: (show: boolean) => void;
   dismissMorningReport: () => void;
+  autoRolloverNotice: { count: number; date: string } | null;
+  dismissAutoRolloverNotice: () => void;
   yesterdayStats: {
     yesterdayDate: string;
     completedTasks: PlannerTask[];
@@ -128,6 +130,9 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
 
   const [showMorningReport, setShowMorningReport] = useState<boolean>(false);
   const [selectedDayForDetail, setSelectedDayForDetail] = useState<string | null>(null);
+  const [autoRolloverNotice, setAutoRolloverNotice] = useState<{ count: number; date: string } | null>(null);
+
+  const dismissAutoRolloverNotice = () => setAutoRolloverNotice(null);
 
   // Active planner object
   const activePlanner = useMemo(() => {
@@ -275,6 +280,64 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     // Keep showMorningReport false by default on open
     setShowMorningReport(false);
   }, []);
+
+  // Automatic rollover: If tasks of previous days are not finished,
+  // move them to the next day (today) automatically without user confirmation
+  const autoRolloverLockRef = React.useRef<boolean>(false);
+  const autoRolloverProcessedRef = React.useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (tasks.length === 0 || autoRolloverLockRef.current) return;
+
+    const today = getTodayISO();
+    const unfinishedPastTasks = tasks.filter(
+      (t) => t.date < today && !t.isCompleted && !autoRolloverProcessedRef.current.has(t.id)
+    );
+
+    if (unfinishedPastTasks.length === 0) return;
+
+    autoRolloverLockRef.current = true;
+    unfinishedPastTasks.forEach((t) => autoRolloverProcessedRef.current.add(t.id));
+
+    const runAutoRollover = async () => {
+      try {
+        const now = new Date().toISOString();
+        const updates = unfinishedPastTasks.map((t) => ({
+          id: t.id,
+          date: today,
+          updatedAt: now,
+        }));
+
+        if (currentUser) {
+          const promises = updates.map((u) =>
+            updateDoc(doc(db, 'tasks', u.id), {
+              date: u.date,
+              updatedAt: u.updatedAt,
+            })
+          );
+          await Promise.all(promises);
+        } else {
+          setTasks((prev) =>
+            prev.map((t) => {
+              const matched = updates.find((u) => u.id === t.id);
+              return matched ? { ...t, date: matched.date, updatedAt: matched.updatedAt } : t;
+            })
+          );
+        }
+
+        setAutoRolloverNotice({
+          count: updates.length,
+          date: today,
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, 'tasks/auto-rollover');
+      } finally {
+        autoRolloverLockRef.current = false;
+      }
+    };
+
+    runAutoRollover();
+  }, [tasks, currentUser]);
 
   const dismissMorningReport = async () => {
     const today = getTodayISO();
@@ -1197,6 +1260,8 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         showMorningReport,
         setShowMorningReport,
         dismissMorningReport,
+        autoRolloverNotice,
+        dismissAutoRolloverNotice,
         yesterdayStats,
         rolloverYesterdayRemaining,
 
