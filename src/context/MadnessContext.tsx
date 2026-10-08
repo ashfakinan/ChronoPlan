@@ -32,7 +32,28 @@ interface MadnessContextType {
   deleteCategory: (categoryId: string) => Promise<void>;
 
   // Task Operations
-  addTask: (dayId: string, title: string, categoryId?: string, notes?: string) => Promise<MadnessTask>;
+  addTask: (
+    dayId: string,
+    title: string,
+    categoryId?: string,
+    notes?: string,
+    isContinued?: boolean,
+    continuedGroupId?: string
+  ) => Promise<MadnessTask>;
+  addBatchTasks: (
+    tasksToCreate: {
+      dayId: string;
+      title: string;
+      categoryId?: string;
+      notes?: string;
+      isContinued?: boolean;
+      continuedGroupId?: string;
+    }[]
+  ) => Promise<MadnessTask[]>;
+  continueTaskAcrossDays: (
+    taskId: string,
+    targetDayIds: string[]
+  ) => Promise<MadnessTask[]>;
   updateTask: (taskId: string, updates: Partial<MadnessTask>) => Promise<void>;
   toggleTaskComplete: (taskId: string) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
@@ -437,7 +458,9 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
     dayId: string,
     title: string,
     categoryId?: string,
-    notes?: string
+    notes?: string,
+    isContinued?: boolean,
+    continuedGroupId?: string
   ): Promise<MadnessTask> => {
     const id = generateId('mtask');
     const userId = currentUser ? currentUser.uid : 'guest';
@@ -456,6 +479,8 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
       isCompleted: false,
       notes: cleanNotes,
       order: dayTasks.length,
+      isContinued: isContinued || false,
+      continuedGroupId: continuedGroupId || undefined,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
@@ -481,6 +506,12 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
       if (cleanNotes) {
         firestoreDoc.notes = cleanNotes;
       }
+      if (isContinued) {
+        firestoreDoc.isContinued = isContinued;
+      }
+      if (continuedGroupId) {
+        firestoreDoc.continuedGroupId = continuedGroupId;
+      }
 
       try {
         await setDoc(doc(db, 'madness_tasks', id), firestoreDoc);
@@ -489,6 +520,114 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
       }
     }
     return newTask;
+  };
+
+  const addBatchTasks = async (
+    tasksToCreate: {
+      dayId: string;
+      title: string;
+      categoryId?: string;
+      notes?: string;
+      isContinued?: boolean;
+      continuedGroupId?: string;
+    }[]
+  ): Promise<MadnessTask[]> => {
+    if (tasksToCreate.length === 0) return [];
+
+    const userId = currentUser ? currentUser.uid : 'guest';
+    const nowIso = new Date().toISOString();
+    const createdList: MadnessTask[] = [];
+
+    // Group by dayId to track order correctly
+    const dayCounts: Record<string, number> = {};
+
+    tasksToCreate.forEach((item) => {
+      const id = generateId('mtask');
+      const currentDayTasksCount = tasks.filter((t) => t.dayId === item.dayId).length;
+      const orderOffset = dayCounts[item.dayId] || 0;
+      dayCounts[item.dayId] = orderOffset + 1;
+
+      const cleanCat = item.categoryId && item.categoryId.trim() ? item.categoryId.trim() : undefined;
+      const cleanNotes = item.notes && item.notes.trim() ? item.notes.trim() : undefined;
+
+      const newTask: MadnessTask = {
+        id,
+        userId,
+        dayId: item.dayId,
+        title: item.title.trim(),
+        categoryId: cleanCat,
+        isCompleted: false,
+        notes: cleanNotes,
+        order: currentDayTasksCount + orderOffset,
+        isContinued: item.isContinued || false,
+        continuedGroupId: item.continuedGroupId || undefined,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      createdList.push(newTask);
+    });
+
+    setTasks((prev) => [...prev, ...createdList]);
+
+    if (currentUser) {
+      for (const t of createdList) {
+        const firestoreDoc: Record<string, any> = {
+          id: t.id,
+          userId: t.userId,
+          dayId: t.dayId,
+          title: t.title,
+          isCompleted: false,
+          order: t.order,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        if (t.categoryId) firestoreDoc.categoryId = t.categoryId;
+        if (t.notes) firestoreDoc.notes = t.notes;
+        if (t.isContinued) firestoreDoc.isContinued = t.isContinued;
+        if (t.continuedGroupId) firestoreDoc.continuedGroupId = t.continuedGroupId;
+
+        try {
+          await setDoc(doc(db, 'madness_tasks', t.id), firestoreDoc);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, `madness_tasks/${t.id}`);
+        }
+      }
+    }
+
+    return createdList;
+  };
+
+  const continueTaskAcrossDays = async (
+    taskId: string,
+    targetDayIds: string[]
+  ): Promise<MadnessTask[]> => {
+    const sourceTask = tasks.find((t) => t.id === taskId);
+    if (!sourceTask || targetDayIds.length === 0) return [];
+
+    const groupId = sourceTask.continuedGroupId || generateId('contgroup');
+
+    // Update source task to be marked as continued with group id
+    if (!sourceTask.isContinued || !sourceTask.continuedGroupId) {
+      await updateTask(sourceTask.id, {
+        isContinued: true,
+        continuedGroupId: groupId,
+      });
+    }
+
+    // Filter out source task's dayId so we don't create duplicate on same day
+    const otherDayIds = targetDayIds.filter((dId) => dId !== sourceTask.dayId);
+    if (otherDayIds.length === 0) return [];
+
+    const itemsToCreate = otherDayIds.map((dayId) => ({
+      dayId,
+      title: sourceTask.title,
+      categoryId: sourceTask.categoryId,
+      notes: sourceTask.notes,
+      isContinued: true,
+      continuedGroupId: groupId,
+    }));
+
+    return await addBatchTasks(itemsToCreate);
   };
 
   const updateTask = async (taskId: string, updates: Partial<MadnessTask>) => {
@@ -607,6 +746,8 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
         updateCategory,
         deleteCategory,
         addTask,
+        addBatchTasks,
+        continueTaskAcrossDays,
         updateTask,
         toggleTaskComplete,
         deleteTask,

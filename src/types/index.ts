@@ -98,6 +98,8 @@ export interface MadnessTask {
   notes?: string;
   order: number;
   priority?: Priority;
+  isContinued?: boolean;
+  continuedGroupId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

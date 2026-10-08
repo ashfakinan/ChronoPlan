@@ -27,6 +27,7 @@ import { useMadness } from '../context/MadnessContext';
 import { MadnessCategory, MadnessDay, MadnessTask } from '../types';
 import { CategoryManagerModal } from './CategoryManagerModal';
 import { AddMadnessTaskModal } from './AddMadnessTaskModal';
+import { ContinueMadnessTaskModal } from './ContinueMadnessTaskModal';
 
 type ViewMode = 'board' | 'focus' | 'list';
 
@@ -60,6 +61,7 @@ export function ScatteredWeeklyMadnessTab() {
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
   const [modalInitialDayId, setModalInitialDayId] = useState<string>('');
   const [modalInitialCategoryId, setModalInitialCategoryId] = useState<string>('');
+  const [taskToContinue, setTaskToContinue] = useState<MadnessTask | null>(null);
 
   // Day renaming state
   const [editingDayId, setEditingDayId] = useState<string | null>(null);
@@ -485,6 +487,13 @@ export function ScatteredWeeklyMadnessTab() {
         initialDayId={modalInitialDayId}
         initialCategoryId={modalInitialCategoryId}
       />
+
+      {/* Continue Task Modal */}
+      <ContinueMadnessTaskModal
+        task={taskToContinue}
+        isOpen={!!taskToContinue}
+        onClose={() => setTaskToContinue(null)}
+      />
     </div>
   );
 
@@ -830,6 +839,16 @@ export function ScatteredWeeklyMadnessTab() {
                             </span>
                           )}
 
+                          {task.isContinued && (
+                            <span
+                              title="Continued task across multiple days"
+                              className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-blue-600/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 flex items-center gap-1"
+                            >
+                              <Layers className="w-2.5 h-2.5" />
+                              Continued
+                            </span>
+                          )}
+
                           {/* Quick Change Category Dropdown on Click */}
                           <div className="relative">
                             <button
@@ -905,6 +924,20 @@ export function ScatteredWeeklyMadnessTab() {
                                     ))}
                                   </div>
                                 </div>
+
+                                <div className="pt-1 border-t border-[#e5e2da] dark:border-[#292b34]">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTaskToContinue(task);
+                                      setActiveMoveTaskId(null);
+                                    }}
+                                    className="w-full text-left px-2 py-1 rounded text-xs hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                  >
+                                    <Layers className="w-3.5 h-3.5" />
+                                    Continue across days...
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -913,6 +946,14 @@ export function ScatteredWeeklyMadnessTab() {
 
                       {/* Card Action Buttons (Hover) */}
                       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => setTaskToContinue(task)}
+                          className="p-1 text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors"
+                          title="Continue task across days"
+                        >
+                          <Layers className="w-3 h-3" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleStartEditTask(task)}
@@ -951,7 +992,9 @@ export function ScatteredWeeklyMadnessTab() {
           <button
             type="button"
             onClick={() => {
-              inputRefs.current[day.id]?.focus();
+              setModalInitialDayId(day.id);
+              setModalInitialCategoryId(filterCategoryId || '');
+              setIsAddTaskModalOpen(true);
             }}
             className="w-full py-1 text-xs text-[#606470] dark:text-[#9aa0ae] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 rounded-lg flex items-center justify-center gap-1.5 font-medium transition-colors cursor-pointer"
           >
