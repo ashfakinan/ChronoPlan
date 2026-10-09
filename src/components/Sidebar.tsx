@@ -15,6 +15,7 @@ import {
   Trash2,
   Type,
   Shuffle,
+  BookOpen,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import { useMadness } from '../context/MadnessContext';
@@ -115,35 +116,30 @@ export function Sidebar({ isOpenOnMobile, onCloseMobile, setActiveTab }: Sidebar
 
   const content = (
     <div className="flex-1 overflow-y-auto divide-y divide-[#e5e2da] dark:divide-[#292b34]">
-      {/* Scattered Weekly Madness Quick Access */}
+      {/* Monthly Study Plan Quick Access */}
       {setActiveTab && (
-        <div className="p-3 bg-gradient-to-r from-indigo-50/70 to-blue-50/70 dark:from-indigo-950/30 dark:to-blue-950/30">
+        <div className="p-3 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-blue-950/30 dark:to-indigo-950/30">
           <button
             type="button"
             onClick={() => {
               setActiveTab('madness');
               onCloseMobile?.();
             }}
-            className="w-full px-3 py-2 bg-[#fdfcf9] dark:bg-[#1a1b20] hover:bg-white dark:hover:bg-[#22242b] border border-indigo-200 dark:border-indigo-900/60 rounded-xl text-left flex items-center justify-between shadow-2xs transition-all group"
+            className="w-full px-3 py-2 bg-[#fdfcf9] dark:bg-[#1a1b20] hover:bg-white dark:hover:bg-[#22242b] border border-blue-200 dark:border-blue-900/60 rounded-xl text-left flex items-center justify-between shadow-2xs transition-all group cursor-pointer"
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-                <Shuffle className="w-3.5 h-3.5" />
+              <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                <BookOpen className="w-3.5 h-3.5" />
               </div>
               <div>
-                <div className="text-xs font-bold text-[#1f2126] dark:text-[#eceef2] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                  Weekly Madness
+                <div className="text-xs font-bold text-[#1f2126] dark:text-[#eceef2] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  Monthly Study Plan
                 </div>
                 <div className="text-[10px] text-[#8c909c]">
-                  Freeform scattered tasks
+                  Syllabus tracker & schedule
                 </div>
               </div>
             </div>
-            {pendingMadnessTasks > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
-                {pendingMadnessTasks}
-              </span>
-            )}
           </button>
         </div>
       )}

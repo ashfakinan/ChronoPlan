@@ -7,7 +7,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { PlannerView } from './components/PlannerView';
 import { DailyTodoTab } from './components/DailyTodoTab';
-import { ScatteredWeeklyMadnessTab } from './components/ScatteredWeeklyMadnessTab';
+import { MonthlyStudyPlanTab } from './components/MonthlyStudyPlanTab';
 import { CalendarTab } from './components/CalendarTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
 import { MorningReportModal } from './components/MorningReportModal';
@@ -43,7 +43,7 @@ function MainApp() {
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           {activeTab === 'planner' && <PlannerView />}
           {activeTab === 'todos' && <DailyTodoTab />}
-          {activeTab === 'madness' && <ScatteredWeeklyMadnessTab />}
+          {activeTab === 'madness' && <MonthlyStudyPlanTab />}
           {activeTab === 'calendar' && <CalendarTab />}
           {activeTab === 'analytics' && <AnalyticsTab />}
         </main>

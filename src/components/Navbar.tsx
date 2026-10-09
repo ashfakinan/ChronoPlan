@@ -14,6 +14,7 @@ import {
   FileText,
   RefreshCw,
   Shuffle,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -140,13 +141,8 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
                   : 'hover:text-[#1f2126] dark:hover:text-[#eceef2]'
               }`}
             >
-              <Shuffle className="w-3.5 h-3.5" />
-              Weekly Madness
-              {pendingMadnessTasks > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
-                  {pendingMadnessTasks}
-                </span>
-              )}
+              <BookOpen className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              Monthly Study Plan
             </button>
 
             <button

@@ -6,6 +6,7 @@ import {
   CalendarDays,
   FileText,
   Shuffle,
+  BookOpen,
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { usePlanner } from '../context/PlannerContext';
@@ -67,23 +68,18 @@ export function MobileBottomNav({
           )}
         </button>
 
-        {/* 3. Scattered Weekly Madness */}
+        {/* 3. Monthly Study Plan */}
         <button
           type="button"
           onClick={() => setActiveTab('madness')}
           className={`relative flex flex-col items-center justify-center h-full min-h-[44px] transition-colors ${
             activeTab === 'madness'
-              ? 'text-indigo-600 dark:text-indigo-400 font-semibold'
+              ? 'text-blue-600 dark:text-blue-400 font-semibold'
               : 'text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2]'
           }`}
         >
-          <Shuffle className="w-4.5 h-4.5 stroke-[2]" />
-          <span className="text-[9px] tracking-tight mt-1">Madness</span>
-          {pendingMadnessTasks > 0 && (
-            <span className="absolute top-1 right-2 w-3.5 h-3.5 rounded-full bg-indigo-600 text-white text-[8px] font-bold flex items-center justify-center shadow-xs">
-              {pendingMadnessTasks}
-            </span>
-          )}
+          <BookOpen className="w-4.5 h-4.5 stroke-[2]" />
+          <span className="text-[9px] tracking-tight mt-1">Study Plan</span>
         </button>
 
         {/* 4. Calendar */}
