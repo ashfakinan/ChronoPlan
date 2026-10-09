@@ -18,6 +18,7 @@ import {
   X,
   Eye,
   EyeOff,
+  GripVertical,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import {
@@ -132,6 +133,54 @@ export function PlannerView() {
     if (dx > 10 || dy > 10) {
       cancelHoldDetection();
     }
+  };
+
+  // Drag & Drop State for Planner GRID ONLY (Desktop / Matrix view)
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<{ date: string; dayPart: string } | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    cancelHoldDetection();
+    setDraggedTaskId(taskId);
+    e.dataTransfer.setData('text/plain', taskId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTaskId(null);
+    setDragOverCell(null);
+  };
+
+  const handleDragOverCell = (e: React.DragEvent, date: string, dayPart: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!dragOverCell || dragOverCell.date !== date || dragOverCell.dayPart !== dayPart) {
+      setDragOverCell({ date, dayPart });
+    }
+  };
+
+  const handleDragLeaveCell = (e: React.DragEvent, date: string, dayPart: string) => {
+    const currentTarget = e.currentTarget;
+    const relatedTarget = e.relatedTarget as Node | null;
+    if (!currentTarget.contains(relatedTarget)) {
+      if (dragOverCell?.date === date && dragOverCell?.dayPart === dayPart) {
+        setDragOverCell(null);
+      }
+    }
+  };
+
+  const handleDropOnCell = async (e: React.DragEvent, targetDate: string, targetDayPart: string) => {
+    e.preventDefault();
+    setDragOverCell(null);
+    const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
+    if (!taskId) return;
+
+    if (selectedTaskIds.has(taskId) && selectedTaskIds.size > 1) {
+      await batchMoveTasks(Array.from(selectedTaskIds), targetDate, targetDayPart);
+    } else {
+      await moveTask(taskId, targetDate, targetDayPart);
+    }
+    setDraggedTaskId(null);
   };
 
   // Batch Task Selection and Move State
@@ -988,8 +1037,13 @@ export function PlannerView() {
                             return (
                               <td
                                 key={`${dateStr}-${dayPart}`}
-                                className={`w-64 min-w-[210px] p-2.5 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[110px] relative ${
-                                  isCurrent
+                                onDragOver={(e) => handleDragOverCell(e, dateStr, dayPart)}
+                                onDragLeave={(e) => handleDragLeaveCell(e, dateStr, dayPart)}
+                                onDrop={(e) => handleDropOnCell(e, dateStr, dayPart)}
+                                className={`w-64 min-w-[210px] p-2.5 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-all min-h-[110px] relative ${
+                                  dragOverCell?.date === dateStr && dragOverCell?.dayPart === dayPart
+                                    ? 'ring-2 ring-blue-500 ring-inset bg-blue-500/10 dark:bg-blue-500/20 shadow-inner'
+                                    : isCurrent
                                     ? 'bg-blue-500/5'
                                     : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
                                 }`}
@@ -1002,6 +1056,9 @@ export function PlannerView() {
                                     return (
                                       <div
                                         key={task.id}
+                                        draggable={!isSelectionMode}
+                                        onDragStart={(e) => handleDragStart(e, task.id)}
+                                        onDragEnd={handleDragEnd}
                                         onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
                                         onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
                                         onTouchEnd={cancelHoldDetection}
@@ -1021,13 +1078,20 @@ export function PlannerView() {
                                           }
                                         }}
                                         className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none ${
-                                          selectedTaskIds.has(task.id)
+                                          draggedTaskId === task.id
+                                            ? 'opacity-40 border-dashed border-blue-500 scale-[0.98]'
+                                            : selectedTaskIds.has(task.id)
                                             ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
                                             : task.isCompleted
                                             ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                             : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
-                                        }`}
+                                        } ${!isSelectionMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                       >
+                                        {/* Grip Drag Handle Icon (visible in Grid view) */}
+                                        {!isSelectionMode && selectedTaskIds.size === 0 && (
+                                          <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-60 transition-opacity shrink-0 mt-0.5" />
+                                        )}
+
                                         {/* Subject Color Accent Stripe */}
                                         <div
                                           className="w-1 self-stretch rounded-full shrink-0"
@@ -1160,6 +1224,13 @@ export function PlannerView() {
                                   })}
                                 </div>
 
+                                {/* Drop indicator when dragging over cell */}
+                                {dragOverCell?.date === dateStr && dragOverCell?.dayPart === dayPart && (
+                                  <div className="py-1.5 px-2 my-1 border border-dashed border-blue-500 bg-blue-50/70 dark:bg-blue-950/50 rounded-md text-center text-[10px] font-semibold text-blue-600 dark:text-blue-400 animate-pulse">
+                                    Drop here to move
+                                  </div>
+                                )}
+
                                 {/* Quick Add Button at bottom of cell */}
                                 <button
                                   type="button"
@@ -1266,8 +1337,13 @@ export function PlannerView() {
                           return (
                             <td
                               key={`${dateStr}-${dayPart}`}
-                              className={`p-2 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[110px] relative ${
-                                isToday(dateStr)
+                              onDragOver={(e) => handleDragOverCell(e, dateStr, dayPart)}
+                              onDragLeave={(e) => handleDragLeaveCell(e, dateStr, dayPart)}
+                              onDrop={(e) => handleDropOnCell(e, dateStr, dayPart)}
+                              className={`p-2 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-all min-h-[110px] relative ${
+                                dragOverCell?.date === dateStr && dragOverCell?.dayPart === dayPart
+                                  ? 'ring-2 ring-blue-500 ring-inset bg-blue-500/10 dark:bg-blue-500/20 shadow-inner'
+                                  : isToday(dateStr)
                                   ? 'bg-blue-500/5'
                                   : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
                               }`}
@@ -1279,6 +1355,9 @@ export function PlannerView() {
                                   return (
                                     <div
                                       key={task.id}
+                                      draggable={!isSelectionMode}
+                                      onDragStart={(e) => handleDragStart(e, task.id)}
+                                      onDragEnd={handleDragEnd}
                                       onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
                                       onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
                                       onTouchEnd={cancelHoldDetection}
@@ -1298,13 +1377,20 @@ export function PlannerView() {
                                         }
                                       }}
                                       className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none ${
-                                        selectedTaskIds.has(task.id)
+                                        draggedTaskId === task.id
+                                          ? 'opacity-40 border-dashed border-blue-500 scale-[0.98]'
+                                          : selectedTaskIds.has(task.id)
                                           ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
                                           : task.isCompleted
                                           ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                           : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
-                                      }`}
+                                      } ${!isSelectionMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                     >
+                                      {/* Grip Drag Handle Icon (visible in Grid view) */}
+                                      {!isSelectionMode && selectedTaskIds.size === 0 && (
+                                        <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-60 transition-opacity shrink-0 mt-0.5" />
+                                      )}
+
                                       <div
                                         className="w-1 self-stretch rounded-full shrink-0"
                                         style={{ backgroundColor: subj?.color || '#3B82F6' }}
@@ -1433,6 +1519,14 @@ export function PlannerView() {
                                   );
                                 })}
                               </div>
+
+                              {/* Drop indicator when dragging over cell */}
+                              {dragOverCell?.date === dateStr && dragOverCell?.dayPart === dayPart && (
+                                <div className="py-1.5 px-2 my-1 border border-dashed border-blue-500 bg-blue-50/70 dark:bg-blue-950/50 rounded-md text-center text-[10px] font-semibold text-blue-600 dark:text-blue-400 animate-pulse">
+                                  Drop here to move
+                                </div>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() => handleOpenAddTask(dateStr, dayPart)}
