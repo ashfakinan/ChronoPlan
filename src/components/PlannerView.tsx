@@ -35,6 +35,7 @@ import { SubjectModal } from './SubjectModal';
 import { DailyViewModal } from './DailyViewModal';
 import { BatchMoveModal } from './BatchMoveModal';
 import { BatchTaskActionBar } from './BatchTaskActionBar';
+import { ZoomController } from './ZoomController';
 import { PlannerTask } from '../types';
 
 export function PlannerView() {
@@ -42,11 +43,13 @@ export function PlannerView() {
     activePlanner,
     tasks,
     subjects,
+    updateTask,
     toggleTaskComplete,
     moveTask,
     batchMoveTasks,
     batchToggleComplete,
     batchDeleteTasks,
+    batchUpdateTasksSubject,
     selectedDayForDetail,
     setSelectedDayForDetail,
     autoRolloverNotice,
@@ -75,10 +78,67 @@ export function PlannerView() {
   // Quick move popup for mobile
   const [movingTask, setMovingTask] = useState<PlannerTask | null>(null);
 
+  // Zoom state (Min 50%, Max 100%)
+  const [zoom, setZoom] = useState<number>(() => {
+    const saved = localStorage.getItem('planner_zoom');
+    return saved ? Math.min(100, Math.max(50, Number(saved))) : 100;
+  });
+
+  const handleZoomChange = (newZoom: number) => {
+    setZoom(newZoom);
+    localStorage.setItem('planner_zoom', String(newZoom));
+  };
+
+  // Touch and hold (long press) detection for task selection
+  const holdTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const touchStartPosRef = React.useRef<{ x: number; y: number } | null>(null);
+  const holdTriggeredRef = React.useRef<boolean>(false);
+
+  const startHoldDetection = (taskId: string, clientX: number, clientY: number) => {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    holdTriggeredRef.current = false;
+    touchStartPosRef.current = { x: clientX, y: clientY };
+
+    holdTimerRef.current = setTimeout(() => {
+      holdTriggeredRef.current = true;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(40);
+        } catch {
+          // ignore vibration error
+        }
+      }
+      setIsSelectionMode(true);
+      setSelectedTaskIds((prev) => {
+        const next = new Set(prev);
+        next.add(taskId);
+        return next;
+      });
+    }, 450);
+  };
+
+  const cancelHoldDetection = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    touchStartPosRef.current = null;
+  };
+
+  const handleTouchMoveDetection = (clientX: number, clientY: number) => {
+    if (!touchStartPosRef.current || !holdTimerRef.current) return;
+    const dx = Math.abs(clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(clientY - touchStartPosRef.current.y);
+    if (dx > 10 || dy > 10) {
+      cancelHoldDetection();
+    }
+  };
+
   // Batch Task Selection and Move State
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isBatchMoveModalOpen, setIsBatchMoveModalOpen] = useState(false);
+  const [activeCategoryPickerTaskId, setActiveCategoryPickerTaskId] = useState<string | null>(null);
 
   const toggleTaskSelection = (taskId: string) => {
     setSelectedTaskIds((prev) => {
@@ -108,6 +168,7 @@ export function PlannerView() {
   const handleClearSelection = () => {
     setSelectedTaskIds(new Set());
     setIsSelectionMode(false);
+    setActiveCategoryPickerTaskId(null);
   };
 
   const handleConfirmBatchMove = async (targetDate: string, targetDayPart: string) => {
@@ -120,8 +181,8 @@ export function PlannerView() {
   const handleBatchToggleComplete = async () => {
     const ids = Array.from(selectedTaskIds);
     if (!ids.length) return;
-    const selectedTasks = tasks.filter((t) => ids.includes(t.id));
-    const allCompleted = selectedTasks.every((t) => t.isCompleted);
+    const selectedTasksList = tasks.filter((t) => ids.includes(t.id));
+    const allCompleted = selectedTasksList.every((t) => t.isCompleted);
     await batchToggleComplete(ids, !allCompleted);
   };
 
@@ -131,6 +192,50 @@ export function PlannerView() {
     if (window.confirm(`Delete ${ids.length} selected tasks?`)) {
       await batchDeleteTasks(ids);
       handleClearSelection();
+    }
+  };
+
+  // Selected tasks and same-category check
+  const selectedTasksList = useMemo(() => {
+    return tasks.filter((t) => selectedTaskIds.has(t.id));
+  }, [tasks, selectedTaskIds]);
+
+  const isAllSameCategory = useMemo(() => {
+    if (selectedTasksList.length <= 1) return true;
+    const firstSubjId = selectedTasksList[0].subjectId;
+    return selectedTasksList.every((t) => t.subjectId === firstSubjId);
+  }, [selectedTasksList]);
+
+  const currentCategory = useMemo(() => {
+    if (selectedTasksList.length === 0 || !isAllSameCategory) return undefined;
+    return subjects.find((s) => s.id === selectedTasksList[0].subjectId);
+  }, [selectedTasksList, isAllSameCategory, subjects]);
+
+  const handleBatchUpdateSubject = async (newSubjectId: string) => {
+    const ids = Array.from(selectedTaskIds);
+    if (!ids.length) return;
+    if (!isAllSameCategory) {
+      alert('Selected tasks have different subjects. You cannot change all of them together unless all selected tasks have the same subject.');
+      return;
+    }
+    await batchUpdateTasksSubject(ids, newSubjectId);
+    setActiveCategoryPickerTaskId(null);
+  };
+
+  // Changing subject by changing one task:
+  // If the task is selected, and ALL selected have the SAME subject, updates ALL of them!
+  // If not all have the same subject, only updates this one task.
+  const handleTaskChangeSubject = async (task: PlannerTask, newSubjectId: string) => {
+    setActiveCategoryPickerTaskId(null);
+    if (selectedTaskIds.has(task.id)) {
+      if (isAllSameCategory) {
+        await batchUpdateTasksSubject(Array.from(selectedTaskIds), newSubjectId);
+      } else {
+        await updateTask(task.id, { subjectId: newSubjectId });
+        alert('Selected tasks have different subjects. Only this task was updated. Deselect tasks of other subjects to enable batch change.');
+      }
+    } else {
+      await updateTask(task.id, { subjectId: newSubjectId });
     }
   };
 
@@ -404,6 +509,9 @@ export function PlannerView() {
             </span>
           </button>
 
+          {/* Zoom Controller (Max 50% Zoom Out) */}
+          <ZoomController zoom={zoom} onZoomChange={handleZoomChange} />
+
           {/* Manage Subjects */}
           <button
             type="button"
@@ -452,7 +560,12 @@ export function PlannerView() {
         </div>
       )}
 
-      {/* MOBILE DAY FOCUS MODE (When on mobile and mobileViewMode === 'day-focus') */}
+      {/* Zoomable Content Area (Max 50% Zoom Out) */}
+      <div
+        className="flex-1 flex flex-col min-h-0 overflow-hidden"
+        style={{ zoom: `${zoom}%` }}
+      >
+        {/* MOBILE DAY FOCUS MODE (When on mobile and mobileViewMode === 'day-focus') */}
       <div
         id="day-focus-scroll"
         className={`md:hidden flex-1 overflow-y-auto ${mobileViewMode === 'day-focus' ? 'block' : 'hidden'}`}
@@ -595,6 +708,15 @@ export function PlannerView() {
                         return (
                           <div
                             key={task.id}
+                            onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
+                            onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
+                            onTouchEnd={cancelHoldDetection}
+                            onTouchCancel={cancelHoldDetection}
+                            onMouseDown={(e) => {
+                              if (e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
+                            }}
+                            onMouseMove={(e) => handleTouchMoveDetection(e.clientX, e.clientY)}
+                            onMouseUp={cancelHoldDetection}
                             className={`flex items-start justify-between gap-2 p-2 rounded-lg border transition-all ${
                               isSelected
                                 ? 'border-blue-500 ring-2 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
@@ -641,6 +763,10 @@ export function PlannerView() {
                               <div
                                 className="flex-1 min-w-0 cursor-pointer pt-2.5 select-none"
                                 onClick={() => {
+                                  if (holdTriggeredRef.current) {
+                                    holdTriggeredRef.current = false;
+                                    return;
+                                  }
                                   if (isSelectionMode || selectedTaskIds.size > 0) {
                                     toggleTaskSelection(task.id);
                                   } else {
@@ -660,12 +786,60 @@ export function PlannerView() {
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-1 text-[10px] text-[#8c909c]">
                                   {subj && (
-                                    <span
-                                      className="font-medium"
-                                      style={{ color: subj.color }}
-                                    >
-                                      {subj.name}
-                                    </span>
+                                    <div className="relative inline-block">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveCategoryPickerTaskId(
+                                            activeCategoryPickerTaskId === task.id ? null : task.id
+                                          );
+                                        }}
+                                        className="font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                                        style={{ color: subj.color }}
+                                        title={
+                                          selectedTaskIds.has(task.id) && isAllSameCategory
+                                            ? `Change subject for all ${selectedTaskIds.size} selected tasks`
+                                            : 'Change subject'
+                                        }
+                                      >
+                                        <span>{subj.name}</span>
+                                      </button>
+
+                                      {activeCategoryPickerTaskId === task.id && (
+                                        <div
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="absolute left-0 top-full mt-1 w-44 p-1.5 bg-[#2a2d36] text-white dark:bg-[#ffffff] dark:text-[#121317] border border-[#444857] dark:border-[#e5e2da] rounded-xl shadow-2xl z-50 text-[11px] space-y-0.5 animate-in fade-in"
+                                        >
+                                          <div className="px-2 py-1 text-[9px] font-bold text-[#8c909c] uppercase tracking-wider">
+                                            {selectedTaskIds.has(task.id) && isAllSameCategory
+                                              ? `Set all (${selectedTaskIds.size}) to:`
+                                              : 'Change Subject to:'}
+                                          </div>
+                                          <div className="max-h-36 overflow-y-auto space-y-0.5">
+                                            {subjects.map((s) => (
+                                              <button
+                                                key={s.id}
+                                                type="button"
+                                                onClick={() => handleTaskChangeSubject(task, s.id)}
+                                                className="w-full text-left px-2 py-1 rounded-md hover:bg-white/10 dark:hover:bg-black/10 flex items-center justify-between gap-1.5"
+                                              >
+                                                <div className="flex items-center gap-1.5 truncate">
+                                                  <span
+                                                    className="w-2 h-2 rounded-full shrink-0"
+                                                    style={{ backgroundColor: s.color }}
+                                                  />
+                                                  <span className="truncate">{s.name}</span>
+                                                </div>
+                                                {task.subjectId === s.id && (
+                                                  <Check className="w-3 h-3 text-blue-400" />
+                                                )}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                   {task.notes && (
                                     <>
@@ -828,7 +1002,20 @@ export function PlannerView() {
                                     return (
                                       <div
                                         key={task.id}
+                                        onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
+                                        onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
+                                        onTouchEnd={cancelHoldDetection}
+                                        onTouchCancel={cancelHoldDetection}
+                                        onMouseDown={(e) => {
+                                          if (e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
+                                        }}
+                                        onMouseMove={(e) => handleTouchMoveDetection(e.clientX, e.clientY)}
+                                        onMouseUp={cancelHoldDetection}
                                         onClick={() => {
+                                          if (holdTriggeredRef.current) {
+                                            holdTriggeredRef.current = false;
+                                            return;
+                                          }
                                           if (isSelectionMode || selectedTaskIds.size > 0) {
                                             toggleTaskSelection(task.id);
                                           }
@@ -885,6 +1072,10 @@ export function PlannerView() {
                                         <div
                                           className="flex-1 min-w-0 cursor-pointer"
                                           onClick={() => {
+                                            if (holdTriggeredRef.current) {
+                                              holdTriggeredRef.current = false;
+                                              return;
+                                            }
                                             if (!isSelectionMode && selectedTaskIds.size === 0) {
                                               setTaskToEdit(task);
                                               setIsTaskModalOpen(true);
@@ -903,12 +1094,64 @@ export function PlannerView() {
 
                                           {subj && (
                                             <div className="flex items-center gap-1 mt-1">
-                                              <span
-                                                className="text-[9px] font-semibold truncate max-w-[120px]"
-                                                style={{ color: subj.color }}
-                                              >
-                                                {subj.name}
-                                              </span>
+                                              <div className="relative inline-block">
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveCategoryPickerTaskId(
+                                                      activeCategoryPickerTaskId === task.id ? null : task.id
+                                                    );
+                                                  }}
+                                                  className="hover:underline cursor-pointer flex items-center gap-1"
+                                                  title={
+                                                    selectedTaskIds.has(task.id) && isAllSameCategory
+                                                      ? `Change subject for all ${selectedTaskIds.size} selected tasks`
+                                                      : 'Change subject'
+                                                  }
+                                                >
+                                                  <span
+                                                    className="text-[9px] font-semibold truncate max-w-[120px]"
+                                                    style={{ color: subj.color }}
+                                                  >
+                                                    {subj.name}
+                                                  </span>
+                                                </button>
+
+                                                {activeCategoryPickerTaskId === task.id && (
+                                                  <div
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="absolute left-0 top-full mt-1 w-44 p-1.5 bg-[#2a2d36] text-white dark:bg-[#ffffff] dark:text-[#121317] border border-[#444857] dark:border-[#e5e2da] rounded-xl shadow-2xl z-50 text-[11px] space-y-0.5 animate-in fade-in"
+                                                  >
+                                                    <div className="px-2 py-1 text-[9px] font-bold text-[#8c909c] uppercase tracking-wider">
+                                                      {selectedTaskIds.has(task.id) && isAllSameCategory
+                                                        ? `Set all (${selectedTaskIds.size}) to:`
+                                                        : 'Change Subject to:'}
+                                                    </div>
+                                                    <div className="max-h-36 overflow-y-auto space-y-0.5">
+                                                      {subjects.map((s) => (
+                                                        <button
+                                                          key={s.id}
+                                                          type="button"
+                                                          onClick={() => handleTaskChangeSubject(task, s.id)}
+                                                          className="w-full text-left px-2 py-1 rounded-md hover:bg-white/10 dark:hover:bg-black/10 flex items-center justify-between gap-1.5"
+                                                        >
+                                                          <div className="flex items-center gap-1.5 truncate">
+                                                            <span
+                                                              className="w-2 h-2 rounded-full shrink-0"
+                                                              style={{ backgroundColor: s.color }}
+                                                            />
+                                                            <span className="truncate">{s.name}</span>
+                                                          </div>
+                                                          {task.subjectId === s.id && (
+                                                            <Check className="w-3 h-3 text-blue-400" />
+                                                          )}
+                                                        </button>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
                                             </div>
                                           )}
                                         </div>
@@ -1036,7 +1279,20 @@ export function PlannerView() {
                                   return (
                                     <div
                                       key={task.id}
+                                      onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
+                                      onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
+                                      onTouchEnd={cancelHoldDetection}
+                                      onTouchCancel={cancelHoldDetection}
+                                      onMouseDown={(e) => {
+                                        if (e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
+                                      }}
+                                      onMouseMove={(e) => handleTouchMoveDetection(e.clientX, e.clientY)}
+                                      onMouseUp={cancelHoldDetection}
                                       onClick={() => {
+                                        if (holdTriggeredRef.current) {
+                                          holdTriggeredRef.current = false;
+                                          return;
+                                        }
                                         if (isSelectionMode || selectedTaskIds.size > 0) {
                                           toggleTaskSelection(task.id);
                                         }
@@ -1091,6 +1347,10 @@ export function PlannerView() {
                                       <div
                                         className="flex-1 min-w-0 cursor-pointer"
                                         onClick={() => {
+                                          if (holdTriggeredRef.current) {
+                                            holdTriggeredRef.current = false;
+                                            return;
+                                          }
                                           if (!isSelectionMode && selectedTaskIds.size === 0) {
                                             setTaskToEdit(task);
                                             setIsTaskModalOpen(true);
@@ -1108,12 +1368,64 @@ export function PlannerView() {
                                         </div>
                                         {subj && (
                                           <div className="flex items-center gap-1 mt-1">
-                                            <span
-                                              className="text-[9px] font-semibold truncate max-w-[100px]"
-                                              style={{ color: subj.color }}
-                                            >
-                                              {subj.name}
-                                            </span>
+                                            <div className="relative inline-block">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setActiveCategoryPickerTaskId(
+                                                    activeCategoryPickerTaskId === task.id ? null : task.id
+                                                  );
+                                                }}
+                                                className="hover:underline cursor-pointer flex items-center gap-1"
+                                                title={
+                                                  selectedTaskIds.has(task.id) && isAllSameCategory
+                                                    ? `Change subject for all ${selectedTaskIds.size} selected tasks`
+                                                    : 'Change subject'
+                                                }
+                                              >
+                                                <span
+                                                  className="text-[9px] font-semibold truncate max-w-[100px]"
+                                                  style={{ color: subj.color }}
+                                                >
+                                                  {subj.name}
+                                                </span>
+                                              </button>
+
+                                              {activeCategoryPickerTaskId === task.id && (
+                                                <div
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  className="absolute left-0 top-full mt-1 w-44 p-1.5 bg-[#2a2d36] text-white dark:bg-[#ffffff] dark:text-[#121317] border border-[#444857] dark:border-[#e5e2da] rounded-xl shadow-2xl z-50 text-[11px] space-y-0.5 animate-in fade-in"
+                                                >
+                                                  <div className="px-2 py-1 text-[9px] font-bold text-[#8c909c] uppercase tracking-wider">
+                                                    {selectedTaskIds.has(task.id) && isAllSameCategory
+                                                      ? `Set all (${selectedTaskIds.size}) to:`
+                                                      : 'Change Subject to:'}
+                                                  </div>
+                                                  <div className="max-h-36 overflow-y-auto space-y-0.5">
+                                                    {subjects.map((s) => (
+                                                      <button
+                                                        key={s.id}
+                                                        type="button"
+                                                        onClick={() => handleTaskChangeSubject(task, s.id)}
+                                                        className="w-full text-left px-2 py-1 rounded-md hover:bg-white/10 dark:hover:bg-black/10 flex items-center justify-between gap-1.5"
+                                                      >
+                                                        <div className="flex items-center gap-1.5 truncate">
+                                                          <span
+                                                            className="w-2 h-2 rounded-full shrink-0"
+                                                            style={{ backgroundColor: s.color }}
+                                                          />
+                                                          <span className="truncate">{s.name}</span>
+                                                        </div>
+                                                        {task.subjectId === s.id && (
+                                                          <Check className="w-3 h-3 text-blue-400" />
+                                                        )}
+                                                      </button>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </div>
                                           </div>
                                         )}
                                       </div>
@@ -1139,6 +1451,7 @@ export function PlannerView() {
             </table>
           </div>
         </div>
+      </div>
       </div>
 
       {/* Mobile Move Task Sheet - 1-Tap Quick Shift */}
@@ -1258,6 +1571,16 @@ export function PlannerView() {
         onBatchToggleComplete={handleBatchToggleComplete}
         onBatchDelete={handleBatchDelete}
         onClearSelection={handleClearSelection}
+        isAllSameCategory={isAllSameCategory}
+        currentCategoryName={currentCategory?.name || (selectedTasksList.length > 0 ? 'No Subject' : undefined)}
+        currentCategoryColor={currentCategory?.color}
+        availableCategories={subjects.map((s) => ({
+          id: s.id,
+          name: s.name,
+          color: s.color,
+        }))}
+        onSelectCategory={handleBatchUpdateSubject}
+        categoryLabel="Subject"
       />
 
       <BatchMoveModal

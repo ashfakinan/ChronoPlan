@@ -57,6 +57,9 @@ interface MadnessContextType {
   updateTask: (taskId: string, updates: Partial<MadnessTask>) => Promise<void>;
   toggleTaskComplete: (taskId: string) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
+  batchDeleteTasks: (taskIds: string[]) => Promise<void>;
+  batchUpdateTasksCategory: (taskIds: string[], categoryId?: string) => Promise<void>;
+  batchMoveTasksToDay: (taskIds: string[], targetDayId: string) => Promise<void>;
   moveTaskToDay: (taskId: string, targetDayId: string, targetOrder?: number) => Promise<void>;
   duplicateTask: (taskId: string) => Promise<void>;
   clearCompletedInDay: (dayId: string) => Promise<void>;
@@ -669,6 +672,68 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const batchDeleteTasks = async (taskIds: string[]) => {
+    if (!taskIds.length) return;
+    if (currentUser) {
+      try {
+        const deletions = taskIds.map((id) => deleteDoc(doc(db, 'madness_tasks', id)));
+        await Promise.all(deletions);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `madness_tasks/batch`);
+      }
+    } else {
+      setTasks((prev) => prev.filter((t) => !taskIds.includes(t.id)));
+    }
+  };
+
+  const batchUpdateTasksCategory = async (taskIds: string[], categoryId?: string) => {
+    if (!taskIds.length) return;
+    const now = new Date().toISOString();
+    if (currentUser) {
+      try {
+        const batchUpdates = taskIds.map((id) =>
+          updateDoc(doc(db, 'madness_tasks', id), {
+            categoryId: categoryId || null,
+            updatedAt: now,
+          })
+        );
+        await Promise.all(batchUpdates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `madness_tasks/batch-category`);
+      }
+    } else {
+      setTasks((prev) =>
+        prev.map((t) =>
+          taskIds.includes(t.id) ? { ...t, categoryId, updatedAt: now } : t
+        )
+      );
+    }
+  };
+
+  const batchMoveTasksToDay = async (taskIds: string[], targetDayId: string) => {
+    if (!taskIds.length) return;
+    const now = new Date().toISOString();
+    if (currentUser) {
+      try {
+        const batchUpdates = taskIds.map((id) =>
+          updateDoc(doc(db, 'madness_tasks', id), {
+            dayId: targetDayId,
+            updatedAt: now,
+          })
+        );
+        await Promise.all(batchUpdates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `madness_tasks/batch-move`);
+      }
+    } else {
+      setTasks((prev) =>
+        prev.map((t) =>
+          taskIds.includes(t.id) ? { ...t, dayId: targetDayId, updatedAt: now } : t
+        )
+      );
+    }
+  };
+
   const moveTaskToDay = async (
     taskId: string,
     targetDayId: string,
@@ -751,6 +816,9 @@ export function MadnessProvider({ children }: { children: React.ReactNode }) {
         updateTask,
         toggleTaskComplete,
         deleteTask,
+        batchDeleteTasks,
+        batchUpdateTasksCategory,
+        batchMoveTasksToDay,
         moveTaskToDay,
         duplicateTask,
         clearCompletedInDay,

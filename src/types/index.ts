@@ -68,6 +68,7 @@ export interface DailyTodo {
   date: string; // YYYY-MM-DD
   isCompleted: boolean;
   priority: Priority;
+  category?: string; // Optional category name e.g. "Work", "Personal", "Study", "General"
   createdAt?: string;
   updatedAt?: string;
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   ChevronLeft,
@@ -32,10 +32,12 @@ export function DailyViewModal({
     activePlanner,
     tasks,
     subjects,
+    updateTask,
     toggleTaskComplete,
     batchMoveTasks,
     batchToggleComplete,
     batchDeleteTasks,
+    batchUpdateTasksSubject,
     setSelectedDayForDetail,
   } = usePlanner();
 
@@ -46,6 +48,51 @@ export function DailyViewModal({
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isBatchMoveModalOpen, setIsBatchMoveModalOpen] = useState(false);
+
+  // Touch and hold (long press) detection
+  const holdTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const touchStartPosRef = React.useRef<{ x: number; y: number } | null>(null);
+  const holdTriggeredRef = React.useRef<boolean>(false);
+
+  const startHoldDetection = (taskId: string, clientX: number, clientY: number) => {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    holdTriggeredRef.current = false;
+    touchStartPosRef.current = { x: clientX, y: clientY };
+
+    holdTimerRef.current = setTimeout(() => {
+      holdTriggeredRef.current = true;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(40);
+        } catch {
+          // ignore
+        }
+      }
+      setIsSelectionMode(true);
+      setSelectedTaskIds((prev) => {
+        const next = new Set(prev);
+        next.add(taskId);
+        return next;
+      });
+    }, 450);
+  };
+
+  const cancelHoldDetection = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    touchStartPosRef.current = null;
+  };
+
+  const handleTouchMoveDetection = (clientX: number, clientY: number) => {
+    if (!touchStartPosRef.current || !holdTimerRef.current) return;
+    const dx = Math.abs(clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(clientY - touchStartPosRef.current.y);
+    if (dx > 10 || dy > 10) {
+      cancelHoldDetection();
+    }
+  };
 
   const toggleTaskSelection = (taskId: string) => {
     setSelectedTaskIds((prev) => {
@@ -99,6 +146,31 @@ export function DailyViewModal({
       await batchDeleteTasks(ids);
       handleClearSelection();
     }
+  };
+
+  const selectedTasksList = useMemo(() => {
+    return tasks.filter((t: PlannerTask) => selectedTaskIds.has(t.id));
+  }, [tasks, selectedTaskIds]);
+
+  const isAllSameCategory = useMemo(() => {
+    if (selectedTasksList.length <= 1) return true;
+    const firstSubjId = selectedTasksList[0].subjectId;
+    return selectedTasksList.every((t: PlannerTask) => t.subjectId === firstSubjId);
+  }, [selectedTasksList]);
+
+  const currentCategory = useMemo(() => {
+    if (selectedTasksList.length === 0 || !isAllSameCategory) return undefined;
+    return subjects.find((s) => s.id === selectedTasksList[0].subjectId);
+  }, [selectedTasksList, isAllSameCategory, subjects]);
+
+  const handleBatchUpdateSubject = async (newSubjectId: string) => {
+    const ids = Array.from(selectedTaskIds);
+    if (!ids.length) return;
+    if (!isAllSameCategory) {
+      alert('Selected tasks have different subjects. Select tasks of the same subject to batch change.');
+      return;
+    }
+    await batchUpdateTasksSubject(ids, newSubjectId);
   };
 
   const getSubject = (subjectId: string) => subjects.find((s) => s.id === subjectId);
@@ -259,7 +331,20 @@ export function DailyViewModal({
                         return (
                           <div
                             key={task.id}
+                            onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
+                            onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
+                            onTouchEnd={cancelHoldDetection}
+                            onTouchCancel={cancelHoldDetection}
+                            onMouseDown={(e) => {
+                              if (e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
+                            }}
+                            onMouseMove={(e) => handleTouchMoveDetection(e.clientX, e.clientY)}
+                            onMouseUp={cancelHoldDetection}
                             onClick={() => {
+                              if (holdTriggeredRef.current) {
+                                holdTriggeredRef.current = false;
+                                return;
+                              }
                               if (isSelectionMode || selectedTaskIds.size > 0) {
                                 toggleTaskSelection(task.id);
                               }
@@ -314,6 +399,10 @@ export function DailyViewModal({
                             <div
                               className="flex-1 min-w-0 cursor-pointer pt-0.5"
                               onClick={() => {
+                                if (holdTriggeredRef.current) {
+                                  holdTriggeredRef.current = false;
+                                  return;
+                                }
                                 if (!isSelectionMode && selectedTaskIds.size === 0) {
                                   setEditingTask(task);
                                 }
@@ -397,6 +486,16 @@ export function DailyViewModal({
         onBatchToggleComplete={handleBatchToggleComplete}
         onBatchDelete={handleBatchDelete}
         onClearSelection={handleClearSelection}
+        isAllSameCategory={isAllSameCategory}
+        currentCategoryName={currentCategory?.name || (selectedTasksList.length > 0 ? 'No Subject' : undefined)}
+        currentCategoryColor={currentCategory?.color}
+        availableCategories={subjects.map((s) => ({
+          id: s.id,
+          name: s.name,
+          color: s.color,
+        }))}
+        onSelectCategory={handleBatchUpdateSubject}
+        categoryLabel="Subject"
       />
 
       <BatchMoveModal

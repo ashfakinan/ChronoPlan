@@ -58,6 +58,7 @@ interface PlannerContextType {
   ) => Promise<void>;
   batchToggleComplete: (taskIds: string[], isCompleted: boolean) => Promise<void>;
   batchDeleteTasks: (taskIds: string[]) => Promise<void>;
+  batchUpdateTasksSubject: (taskIds: string[], subjectId: string) => Promise<void>;
 
   notes: ImportantNote[];
   createNote: (title: string, content: string, tag: NoteTag, date: string) => Promise<ImportantNote>;
@@ -73,10 +74,12 @@ interface PlannerContextType {
   deleteSchedule: (id: string) => Promise<void>;
 
   todos: DailyTodo[];
-  createTodo: (text: string, date: string, priority?: Priority) => Promise<DailyTodo>;
+  createTodo: (text: string, date?: string, priority?: Priority, category?: string) => Promise<DailyTodo>;
   toggleTodoComplete: (id: string) => Promise<void>;
   updateTodo: (id: string, updates: Partial<DailyTodo>) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
+  batchDeleteTodos: (todoIds: string[]) => Promise<void>;
+  batchUpdateTodosCategory: (todoIds: string[], category: string) => Promise<void>;
   rolloverUnfinishedTodos: (fromDate: string, toDate: string) => Promise<number>;
 
   showMorningReport: boolean;
@@ -965,6 +968,25 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const batchUpdateTasksSubject = async (taskIds: string[], subjectId: string) => {
+    if (!taskIds.length) return;
+    const now = new Date().toISOString();
+    if (currentUser) {
+      try {
+        const batchUpdates = taskIds.map((id) =>
+          updateDoc(doc(db, 'tasks', id), { subjectId, updatedAt: now })
+        );
+        await Promise.all(batchUpdates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `tasks/batch-subject`);
+      }
+    } else {
+      setTasks((prev) =>
+        prev.map((t) => (taskIds.includes(t.id) ? { ...t, subjectId, updatedAt: now } : t))
+      );
+    }
+  };
+
   // --- Notes CRUD ---
   const createNote = async (
     title: string,
@@ -1101,7 +1123,8 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
   const createTodo = async (
     text: string,
     date: string = getTodayISO(),
-    priority: Priority = 'medium'
+    priority: Priority = 'medium',
+    category?: string
   ): Promise<DailyTodo> => {
     const id = generateId('todo');
     const userId = currentUser ? currentUser.uid : 'guest';
@@ -1112,6 +1135,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       date,
       isCompleted: false,
       priority,
+      ...(category ? { category: category.trim() } : {}),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1156,6 +1180,39 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       setTodos((prev) => prev.filter((t) => t.id !== id));
+    }
+  };
+
+  const batchDeleteTodos = async (todoIds: string[]) => {
+    if (!todoIds.length) return;
+    if (currentUser) {
+      try {
+        const deletions = todoIds.map((id) => deleteDoc(doc(db, 'todos', id)));
+        await Promise.all(deletions);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `todos/batch`);
+      }
+    } else {
+      setTodos((prev) => prev.filter((t) => !todoIds.includes(t.id)));
+    }
+  };
+
+  const batchUpdateTodosCategory = async (todoIds: string[], category: string) => {
+    if (!todoIds.length) return;
+    const now = new Date().toISOString();
+    if (currentUser) {
+      try {
+        const batchUpdates = todoIds.map((id) =>
+          updateDoc(doc(db, 'todos', id), { category: category.trim(), updatedAt: now })
+        );
+        await Promise.all(batchUpdates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `todos/batch-category`);
+      }
+    } else {
+      setTodos((prev) =>
+        prev.map((t) => (todoIds.includes(t.id) ? { ...t, category: category.trim(), updatedAt: now } : t))
+      );
     }
   };
 
@@ -1236,6 +1293,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         batchMoveTasks,
         batchToggleComplete,
         batchDeleteTasks,
+        batchUpdateTasksSubject,
 
         notes,
         createNote,
@@ -1255,6 +1313,8 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         toggleTodoComplete,
         updateTodo,
         deleteTodo,
+        batchDeleteTodos,
+        batchUpdateTodosCategory,
         rolloverUnfinishedTodos,
 
         showMorningReport,
