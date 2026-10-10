@@ -30,10 +30,41 @@ export interface StudySubject {
 // Chapter entry definition
 export interface StudyChapter {
   id: string;
-  p: string; // Paper: e.g. "1st", "2nd", or custom label
-  c: number | string; // Chapter number or name
-  title?: string; // Optional detailed topic title
+  p?: string; // Paper: e.g. "1st", "2nd", or custom label
+  c?: number | string; // Chapter number or code
+  name?: string; // Custom chapter name (e.g. "Thermodynamics", "Vectors")
+  title?: string; // Optional detailed topic title / alias
 }
+
+// Helper to format chapter display name nicely
+export const getChapterDisplayName = (ch: StudyChapter): { prefix: string; name: string; full: string } => {
+  const parts: string[] = [];
+  if (ch.p && ch.p.trim()) parts.push(ch.p.trim());
+  if (ch.c !== undefined && ch.c !== null && String(ch.c).trim() !== '') {
+    const cStr = String(ch.c).trim();
+    if (/^(ch|chapter)/i.test(cStr)) {
+      parts.push(cStr);
+    } else {
+      parts.push(`Ch${cStr}`);
+    }
+  }
+
+  const prefix = parts.join(' · ');
+  const chapterName = (ch.name || ch.title || '').trim();
+
+  let full = '';
+  if (prefix && chapterName) {
+    full = `${prefix}: ${chapterName}`;
+  } else if (chapterName) {
+    full = chapterName;
+  } else if (prefix) {
+    full = prefix;
+  } else {
+    full = 'Chapter';
+  }
+
+  return { prefix, name: chapterName, full };
+};
 
 // Month plan data
 export interface StudyMonth {
@@ -60,12 +91,13 @@ const DEFAULT_SUBJECTS: StudySubject[] = [
   { key: 'hm', label: 'Higher Math', color: '#c47bf7' },
 ];
 
-// Helper to generate unique chapter IDs
-const makeCh = (p: string, c: number | string, title?: string): StudyChapter => ({
-  id: `ch_${p}_${c}_${Math.random().toString(36).slice(2, 7)}`,
+// Helper to generate unique chapter IDs with name support
+const makeCh = (p: string = '', c: number | string = '', name?: string): StudyChapter => ({
+  id: `ch_${p || 'p'}_${c || 'c'}_${Math.random().toString(36).slice(2, 7)}`,
   p,
   c,
-  title,
+  name,
+  title: name,
 });
 
 // Default 14-month data matching the user HTML exactly
@@ -279,9 +311,21 @@ export function MonthlyStudyPlanTab() {
   const [isAddChapterModalOpen, setIsAddChapterModalOpen] = useState(false);
   const [chapterTargetMonth, setChapterTargetMonth] = useState<string>('m1');
   const [chapterTargetSubject, setChapterTargetSubject] = useState<string>('phy');
+  const [newChapterName, setNewChapterName] = useState<string>('');
   const [newChapterPaper, setNewChapterPaper] = useState<string>('1st');
   const [newChapterNumber, setNewChapterNumber] = useState<string>('');
-  const [newChapterTitle, setNewChapterTitle] = useState<string>('');
+
+  // Rename & Edit Chapter state
+  const [editingChapter, setEditingChapter] = useState<{
+    monthId: string;
+    subjectKey: string;
+    chapter: StudyChapter;
+  } | null>(null);
+  const [editChapterName, setEditChapterName] = useState<string>('');
+  const [editChapterPaper, setEditChapterPaper] = useState<string>('');
+  const [editChapterNumber, setEditChapterNumber] = useState<string>('');
+  const [editChapterMonthId, setEditChapterMonthId] = useState<string>('');
+  const [editChapterSubjectKey, setEditChapterSubjectKey] = useState<string>('');
 
   // Editing Month Modal
   const [editingMonth, setEditingMonth] = useState<StudyMonth | null>(null);
@@ -353,6 +397,37 @@ export function MonthlyStudyPlanTab() {
   const collapseAll = () => {
     setOpenMonths({});
   };
+
+  // When searching, auto-expand months that have matching chapters
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    const query = searchQuery.toLowerCase().trim();
+    const matches: Record<string, boolean> = {};
+
+    config.months.forEach((m) => {
+      let monthHasMatch = m.label.toLowerCase().includes(query);
+      if (!monthHasMatch) {
+        config.subjects.forEach((s) => {
+          const val = m.subjectsData[s.key];
+          if (Array.isArray(val)) {
+            val.forEach((ch) => {
+              const { full } = getChapterDisplayName(ch);
+              if (full.toLowerCase().includes(query)) {
+                monthHasMatch = true;
+              }
+            });
+          }
+        });
+      }
+      if (monthHasMatch) {
+        matches[m.id] = true;
+      }
+    });
+
+    if (Object.keys(matches).length > 0) {
+      setOpenMonths((prev) => ({ ...prev, ...matches }));
+    }
+  }, [searchQuery, config]);
 
   // Compute Overall Stats
   const stats = useMemo(() => {
@@ -435,12 +510,20 @@ export function MonthlyStudyPlanTab() {
 
   const handleAddChapterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChapterNumber.trim()) return;
+    const trimmedName = newChapterName.trim();
+    const trimmedNum = newChapterNumber.trim();
+    const trimmedPaper = newChapterPaper.trim();
+
+    // User can add chapter with custom name, chapter number, or both
+    if (!trimmedName && !trimmedNum) {
+      alert('Please enter a Chapter Name or Chapter Number.');
+      return;
+    }
 
     const newCh = makeCh(
-      newChapterPaper.trim() || '1st',
-      newChapterNumber.trim(),
-      newChapterTitle.trim() || undefined
+      trimmedPaper,
+      trimmedNum,
+      trimmedName
     );
 
     setConfig((prev) => {
@@ -462,9 +545,101 @@ export function MonthlyStudyPlanTab() {
       return { ...prev, months: updatedMonths };
     });
 
+    setNewChapterName('');
     setNewChapterNumber('');
-    setNewChapterTitle('');
     setIsAddChapterModalOpen(false);
+  };
+
+  const openRenameChapter = (monthId: string, subjectKey: string, chapter: StudyChapter) => {
+    setEditingChapter({ monthId, subjectKey, chapter });
+    setEditChapterName(chapter.name || chapter.title || '');
+    setEditChapterPaper(chapter.p || '');
+    setEditChapterNumber(chapter.c !== undefined && chapter.c !== null ? String(chapter.c) : '');
+    setEditChapterMonthId(monthId);
+    setEditChapterSubjectKey(subjectKey);
+  };
+
+  const handleSaveChapterRename = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingChapter) return;
+
+    const trimmedName = editChapterName.trim();
+    const trimmedPaper = editChapterPaper.trim();
+    const trimmedNum = editChapterNumber.trim();
+
+    if (!trimmedName && !trimmedNum) {
+      alert('Please enter at least a Chapter Name or Chapter Number.');
+      return;
+    }
+
+    const updatedChapter: StudyChapter = {
+      ...editingChapter.chapter,
+      name: trimmedName || undefined,
+      title: trimmedName || undefined,
+      p: trimmedPaper,
+      c: trimmedNum,
+    };
+
+    const oldMonthId = editingChapter.monthId;
+    const oldSubjectKey = editingChapter.subjectKey;
+    const targetMonthId = editChapterMonthId;
+    const targetSubjKey = editChapterSubjectKey;
+
+    setConfig((prev) => {
+      // If remaining in the same month & subject
+      if (oldMonthId === targetMonthId && oldSubjectKey === targetSubjKey) {
+        return {
+          ...prev,
+          months: prev.months.map((m) => {
+            if (m.id !== oldMonthId) return m;
+            const current = m.subjectsData[oldSubjectKey];
+            if (!Array.isArray(current)) return m;
+            return {
+              ...m,
+              subjectsData: {
+                ...m.subjectsData,
+                [oldSubjectKey]: current.map((c) =>
+                  c.id === editingChapter.chapter.id ? updatedChapter : c
+                ),
+              },
+            };
+          }),
+        };
+      }
+
+      // If moving across month or subject
+      return {
+        ...prev,
+        months: prev.months.map((m) => {
+          let updatedSubjData = { ...m.subjectsData };
+
+          if (m.id === oldMonthId) {
+            const oldList = updatedSubjData[oldSubjectKey];
+            if (Array.isArray(oldList)) {
+              updatedSubjData[oldSubjectKey] = oldList.filter(
+                (c) => c.id !== editingChapter.chapter.id
+              );
+            }
+          }
+
+          if (m.id === targetMonthId) {
+            const destList = updatedSubjData[targetSubjKey];
+            if (Array.isArray(destList)) {
+              updatedSubjData[targetSubjKey] = [...destList, updatedChapter];
+            } else {
+              updatedSubjData[targetSubjKey] = [updatedChapter];
+            }
+          }
+
+          return {
+            ...m,
+            subjectsData: updatedSubjData,
+          };
+        }),
+      };
+    });
+
+    setEditingChapter(null);
   };
 
   const handleDeleteChapter = (monthId: string, subjectKey: string, chapterId: string) => {
@@ -616,34 +791,59 @@ export function MonthlyStudyPlanTab() {
             </div>
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-            <button
-              type="button"
-              onClick={() => setSelectedSubjectFilter('all')}
-              className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-colors ${
-                selectedSubjectFilter === 'all'
-                  ? 'bg-blue-600 text-white font-bold'
-                  : 'text-[#606470] dark:text-[#7b82a0] hover:text-[#1f2126] dark:hover:text-[#e8eaf2]'
-              }`}
-            >
-              All
-            </button>
-            {config.subjects.map((s) => (
+          {/* Search & Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8c909c]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search chapter name..."
+                className="pl-8 pr-7 py-1 bg-[#fdfcf9] dark:bg-[#181c26] border border-[#e5e2da] dark:border-[#2a3047] rounded-lg text-xs placeholder-[#8c909c] text-[#1f2126] dark:text-[#e8eaf2] focus:outline-hidden focus:ring-1 focus:ring-blue-500 w-36 sm:w-48"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#e8eaf2]"
+                  title="Clear search"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
               <button
-                key={s.key}
                 type="button"
-                onClick={() => setSelectedSubjectFilter(s.key)}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-colors flex items-center gap-1 ${
-                  selectedSubjectFilter === s.key
+                onClick={() => setSelectedSubjectFilter('all')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-colors ${
+                  selectedSubjectFilter === 'all'
                     ? 'bg-blue-600 text-white font-bold'
                     : 'text-[#606470] dark:text-[#7b82a0] hover:text-[#1f2126] dark:hover:text-[#e8eaf2]'
                 }`}
               >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.color }} />
-                <span>{s.label.split(' ')[0]}</span>
+                All
               </button>
-            ))}
+              {config.subjects.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setSelectedSubjectFilter(s.key)}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-colors flex items-center gap-1 ${
+                    selectedSubjectFilter === s.key
+                      ? 'bg-blue-600 text-white font-bold'
+                      : 'text-[#606470] dark:text-[#7b82a0] hover:text-[#1f2126] dark:hover:text-[#e8eaf2]'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.color }} />
+                  <span>{s.label.split(' ')[0]}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -798,33 +998,56 @@ export function MonthlyStudyPlanTab() {
                             ) : (
                               chapters.map((ch, idx) => {
                                 const st = getChapterState(month.n, subj.key, idx, ch.id);
+                                const { prefix, name, full } = getChapterDisplayName(ch);
+                                const isSearchMatch =
+                                  searchQuery.trim() !== '' &&
+                                  (full.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    subj.label.toLowerCase().includes(searchQuery.toLowerCase()));
 
                                 return (
                                   <div
                                     key={ch.id}
                                     className={`group/card relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs transition-all select-none shadow-2xs ${
-                                      st.d
+                                      isSearchMatch
+                                        ? 'ring-2 ring-amber-500 bg-amber-50/70 dark:bg-amber-950/40 border-amber-500'
+                                        : st.d
                                         ? 'border-emerald-500/50 bg-emerald-500/15 dark:bg-emerald-950/40 text-[#8c909c]'
                                         : st.r
                                         ? 'border-blue-500/60 ring-1 ring-blue-500/40 bg-blue-50/60 dark:bg-blue-950/30'
                                         : 'border-[#e5e2da] dark:border-[#2a3047] bg-[#fdfcf9] dark:bg-[#181c26] hover:border-[#cfcbc2]'
                                     }`}
                                   >
-                                    <span
-                                      className={`whitespace-nowrap font-medium text-[11px] ${
-                                        st.d ? 'line-through text-[#8c909c]' : 'text-[#1f2126] dark:text-[#e8eaf2]'
-                                      }`}
-                                      title={ch.title}
+                                    {/* Clickable Chapter Name to Rename */}
+                                    <button
+                                      type="button"
+                                      onClick={() => openRenameChapter(month.id, subj.key, ch)}
+                                      className="text-left font-medium text-[11px] hover:underline focus:outline-hidden cursor-pointer flex items-center gap-1 group/btn"
+                                      title="Click to rename or edit chapter"
                                     >
-                                      {ch.p} · Ch{ch.c}
-                                      {ch.title && <span className="opacity-75 ml-1">({ch.title})</span>}
-                                    </span>
+                                      <span
+                                        className={`whitespace-normal break-words max-w-[190px] sm:max-w-[280px] leading-tight ${
+                                          st.d
+                                            ? 'line-through text-[#8c909c]'
+                                            : 'text-[#1f2126] dark:text-[#e8eaf2]'
+                                        }`}
+                                      >
+                                        {prefix && (
+                                          <span className="text-[10px] opacity-75 font-normal mr-1">
+                                            {prefix}
+                                            {name ? ':' : ''}
+                                          </span>
+                                        )}
+                                        <span className={name ? 'font-semibold text-blue-700 dark:text-blue-300' : ''}>
+                                          {name || prefix || 'Chapter'}
+                                        </span>
+                                      </span>
+                                    </button>
 
-                                    {/* Action Checkboxes */}
-                                    <div className="flex items-center gap-1.5 pl-1 border-l border-[#e5e2da] dark:border-[#2a3047]">
+                                    {/* Action Checkboxes & Buttons */}
+                                    <div className="flex items-center gap-1 pl-1.5 border-l border-[#e5e2da] dark:border-[#2a3047]">
                                       {/* R = Added to Routine */}
                                       <label
-                                        className="flex items-center gap-0.5 cursor-pointer text-[10px] font-bold text-[#606470] dark:text-[#7b82a0] hover:text-blue-600"
+                                        className="flex items-center gap-0.5 cursor-pointer text-[10px] font-bold text-[#606470] dark:text-[#7b82a0] hover:text-blue-600 px-0.5"
                                         title="Mark as Added to Routine"
                                       >
                                         <input
@@ -840,7 +1063,7 @@ export function MonthlyStudyPlanTab() {
 
                                       {/* ✓ = Finished */}
                                       <label
-                                        className="flex items-center gap-0.5 cursor-pointer text-[10px] font-bold text-[#606470] dark:text-[#7b82a0] hover:text-emerald-600"
+                                        className="flex items-center gap-0.5 cursor-pointer text-[10px] font-bold text-[#606470] dark:text-[#7b82a0] hover:text-emerald-600 px-0.5"
                                         title="Mark as Finished"
                                       >
                                         <input
@@ -854,11 +1077,21 @@ export function MonthlyStudyPlanTab() {
                                         <span className="text-emerald-600 dark:text-emerald-400">✓</span>
                                       </label>
 
-                                      {/* Delete chapter on hover */}
+                                      {/* Rename Button (pencil) */}
+                                      <button
+                                        type="button"
+                                        onClick={() => openRenameChapter(month.id, subj.key, ch)}
+                                        className="p-1 text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors cursor-pointer"
+                                        title="Rename or edit chapter"
+                                      >
+                                        <Edit2 className="w-2.5 h-2.5" />
+                                      </button>
+
+                                      {/* Delete chapter button */}
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteChapter(month.id, subj.key, ch.id)}
-                                        className="opacity-0 group-hover/card:opacity-100 p-0.5 text-rose-500 hover:text-rose-700 transition-opacity ml-0.5"
+                                        className="p-1 text-[#8c909c] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
                                         title="Delete chapter"
                                       >
                                         <Trash2 className="w-2.5 h-2.5" />
@@ -949,11 +1182,29 @@ export function MonthlyStudyPlanTab() {
                 </select>
               </div>
 
-              {/* Paper & Chapter Number */}
+              {/* Chapter Name (Primary Field) */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
+                  Chapter Name / Topic: *
+                </label>
+                <input
+                  type="text"
+                  value={newChapterName}
+                  onChange={(e) => setNewChapterName(e.target.value)}
+                  placeholder="e.g. Vectors, Optics, Thermodynamics, Calculus..."
+                  autoFocus
+                  className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500 font-medium"
+                />
+                <p className="text-[10px] text-[#8c909c] mt-0.5">
+                  Name this chapter freely as you want.
+                </p>
+              </div>
+
+              {/* Paper & Chapter Number (Optional) */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
-                    Paper / Part:
+                    Paper / Part (Optional):
                   </label>
                   <input
                     type="text"
@@ -966,48 +1217,240 @@ export function MonthlyStudyPlanTab() {
 
                 <div>
                   <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
-                    Chapter Number: *
+                    Chapter Number (Optional):
                   </label>
                   <input
                     type="text"
                     value={newChapterNumber}
                     onChange={(e) => setNewChapterNumber(e.target.value)}
-                    placeholder="e.g. 4 or 5"
-                    required
-                    autoFocus
+                    placeholder="e.g. 1, 2, or 4"
                     className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
-              {/* Optional Topic Title */}
-              <div>
-                <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
-                  Optional Topic Title:
-                </label>
-                <input
-                  type="text"
-                  value={newChapterTitle}
-                  onChange={(e) => setNewChapterTitle(e.target.value)}
-                  placeholder="e.g. Optics / Organic Chemistry / Genetics"
-                  className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              {/* Live Preview */}
+              {(() => {
+                const previewSubject = config.subjects.find((s) => s.key === chapterTargetSubject);
+                const { full } = getChapterDisplayName({
+                  id: 'preview',
+                  p: newChapterPaper,
+                  c: newChapterNumber,
+                  name: newChapterName,
+                });
+                return (
+                  <div className="p-2.5 rounded-xl border border-dashed border-[#8c909c]/40 bg-black/5 dark:bg-white/5 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-[#8c909c]">
+                      Live Card Preview:
+                    </div>
+                    <div
+                      style={{
+                        borderColor: previewSubject?.color,
+                        color: previewSubject?.color,
+                        backgroundColor: `${previewSubject?.color}15`,
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold"
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: previewSubject?.color }}
+                      />
+                      <span>{full || 'Enter chapter name or number above'}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#e5e2da] dark:border-[#2a3047]">
                 <button
                   type="button"
                   onClick={() => setIsAddChapterModalOpen(false)}
-                  className="px-3 py-1.5 rounded-xl border border-[#e5e2da] dark:border-[#2a3047] hover:bg-black/5 text-xs font-medium"
+                  className="px-3 py-1.5 rounded-xl border border-[#e5e2da] dark:border-[#2a3047] hover:bg-black/5 text-xs font-medium cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-semibold shadow-xs transition-transform cursor-pointer"
                 >
                   Add Chapter
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ────────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL 1.5: RENAME & EDIT CHAPTER MODAL                                     */}
+      {/* ────────────────────────────────────────────────────────────────────────── */}
+      {editingChapter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-[#fdfcf9] dark:bg-[#181c26] text-[#1f2126] dark:text-[#e8eaf2] border border-[#e5e2da] dark:border-[#2a3047] rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-[#e5e2da] dark:border-[#2a3047]">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-sm font-bold">Rename & Edit Chapter</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingChapter(null)}
+                className="p-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#e8eaf2] rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveChapterRename} className="space-y-3.5 text-xs">
+              {/* Chapter Name Input */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
+                  Chapter Name / Topic:
+                </label>
+                <input
+                  type="text"
+                  value={editChapterName}
+                  onChange={(e) => setEditChapterName(e.target.value)}
+                  placeholder="e.g. Vectors, Optics, Thermodynamics, Calculus..."
+                  autoFocus
+                  className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500 font-medium"
+                />
+                <p className="text-[10px] text-[#8c909c] mt-0.5">
+                  Rename this chapter to whatever name you want.
+                </p>
+              </div>
+
+              {/* Paper / Part & Chapter Number */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
+                    Paper / Part (Optional):
+                  </label>
+                  <input
+                    type="text"
+                    value={editChapterPaper}
+                    onChange={(e) => setEditChapterPaper(e.target.value)}
+                    placeholder="e.g. 1st or 2nd"
+                    className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
+                    Chapter Number (Optional):
+                  </label>
+                  <input
+                    type="text"
+                    value={editChapterNumber}
+                    onChange={(e) => setEditChapterNumber(e.target.value)}
+                    placeholder="e.g. 1, 2, or 4"
+                    className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Reassign Month & Subject */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
+                    Subject:
+                  </label>
+                  <select
+                    value={editChapterSubjectKey}
+                    onChange={(e) => setEditChapterSubjectKey(e.target.value)}
+                    className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  >
+                    {config.subjects.map((s) => (
+                      <option key={s.key} value={s.key}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#8c909c] uppercase mb-1">
+                    Month:
+                  </label>
+                  <select
+                    value={editChapterMonthId}
+                    onChange={(e) => setEditChapterMonthId(e.target.value)}
+                    className="w-full p-2 bg-[#f4f2ec] dark:bg-[#1f2535] border border-[#e5e2da] dark:border-[#2a3047] rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  >
+                    {config.months.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        Month {m.n}: {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Live Preview */}
+              {(() => {
+                const targetSubj = config.subjects.find((s) => s.key === editChapterSubjectKey);
+                const { full } = getChapterDisplayName({
+                  id: editingChapter.chapter.id,
+                  p: editChapterPaper,
+                  c: editChapterNumber,
+                  name: editChapterName,
+                });
+                return (
+                  <div className="p-2.5 rounded-xl border border-dashed border-[#8c909c]/40 bg-black/5 dark:bg-white/5 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-[#8c909c]">
+                      Live Card Preview:
+                    </div>
+                    <div
+                      style={{
+                        borderColor: targetSubj?.color,
+                        color: targetSubj?.color,
+                        backgroundColor: `${targetSubj?.color}15`,
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold"
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: targetSubj?.color }}
+                      />
+                      <span>{full || 'Enter chapter name or number above'}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-between pt-2 border-t border-[#e5e2da] dark:border-[#2a3047]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteChapter(
+                      editingChapter.monthId,
+                      editingChapter.subjectKey,
+                      editingChapter.chapter.id
+                    );
+                    setEditingChapter(null);
+                  }}
+                  className="px-2.5 py-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Chapter</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingChapter(null)}
+                    className="px-3 py-1.5 rounded-xl border border-[#e5e2da] dark:border-[#2a3047] hover:bg-black/5 text-xs font-medium cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-semibold shadow-xs transition-transform cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </form>
           </div>
