@@ -22,6 +22,8 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import {
@@ -69,6 +71,7 @@ export function PlannerView() {
   // Mobile navigation mode: 'day-focus' (sections: Morning, Afternoon, Evening, Night) or 'matrix'
   const [mobileViewMode, setMobileViewMode] = useState<'matrix' | 'day-focus'>('day-focus');
   const [mobileSelectedDate, setMobileSelectedDate] = useState<string>('');
+  const [mobileGridPartFilter, setMobileGridPartFilter] = useState<string>('all');
 
   // Modals state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -82,16 +85,107 @@ export function PlannerView() {
   // Quick move popup for mobile
   const [movingTask, setMovingTask] = useState<PlannerTask | null>(null);
 
-  // Zoom state (Min 50%, Max 100%)
+  // Zoom state (Min 50%, Max 175%)
   const [zoom, setZoom] = useState<number>(() => {
     const saved = localStorage.getItem('planner_zoom');
-    return saved ? Math.min(100, Math.max(50, Number(saved))) : 100;
+    return saved ? Math.min(175, Math.max(50, Number(saved))) : 100;
   });
 
   const handleZoomChange = (newZoom: number) => {
-    setZoom(newZoom);
-    localStorage.setItem('planner_zoom', String(newZoom));
+    const clamped = Math.min(175, Math.max(50, newZoom));
+    setZoom(clamped);
+    localStorage.setItem('planner_zoom', String(clamped));
   };
+
+  // Mobile Grid layout density/mode: 'matrix' (side-by-side table) vs 'cards' (spacious multi-column schedule cards)
+  const [mobileGridLayout, setMobileGridLayout] = useState<'matrix' | 'cards'>('matrix');
+
+  // Two-thumb pinch to zoom gesture (both thumbs inward = zoom out, outward = zoom in)
+  const pinchContainerRef = React.useRef<HTMLDivElement>(null);
+  const pinchStartDistRef = React.useRef<number | null>(null);
+  const pinchStartZoomRef = React.useRef<number>(100);
+  const [isPinching, setIsPinching] = useState(false);
+  const [pinchFeedbackZoom, setPinchFeedbackZoom] = useState(zoom);
+  const pinchTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const zoomRef = React.useRef(zoom);
+
+  React.useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  // Attach native touch event listeners for two-thumb pinch-to-zoom
+  React.useEffect(() => {
+    const container = pinchContainerRef.current;
+    if (!container) return;
+
+    const calcTouchDist = (t1: Touch, t2: Touch) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.hypot(dx, dy);
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dist = calcTouchDist(e.touches[0], e.touches[1]);
+        if (dist > 15) {
+          pinchStartDistRef.current = dist;
+          pinchStartZoomRef.current = zoomRef.current;
+          setIsPinching(true);
+          setPinchFeedbackZoom(zoomRef.current);
+          if (pinchTimerRef.current) {
+            clearTimeout(pinchTimerRef.current);
+            pinchTimerRef.current = null;
+          }
+        }
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchStartDistRef.current && pinchStartDistRef.current > 15) {
+        // Prevent default browser viewport page zooming
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+
+        const currentDist = calcTouchDist(e.touches[0], e.touches[1]);
+        const scale = currentDist / pinchStartDistRef.current;
+        // Thumbs inward: currentDist < pinchStartDist -> scale < 1 -> zoom out
+        // Thumbs outward: currentDist > pinchStartDist -> scale > 1 -> zoom in
+        const rawZoom = pinchStartZoomRef.current * scale;
+        const steppedZoom = Math.round(rawZoom / 5) * 5;
+        const clamped = Math.max(50, Math.min(175, steppedZoom));
+
+        if (clamped !== zoomRef.current) {
+          zoomRef.current = clamped;
+          setZoom(clamped);
+          setPinchFeedbackZoom(clamped);
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2 && pinchStartDistRef.current !== null) {
+        pinchStartDistRef.current = null;
+        localStorage.setItem('planner_zoom', String(zoomRef.current));
+        pinchTimerRef.current = setTimeout(() => {
+          setIsPinching(false);
+        }, 700);
+      }
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
+      if (pinchTimerRef.current) clearTimeout(pinchTimerRef.current);
+    };
+  }, []);
 
   // Manual Side Scroll state & controls for PC / Desktop
   const matrixScrollRef = React.useRef<HTMLDivElement>(null);
@@ -376,6 +470,11 @@ export function PlannerView() {
     return activePlanner?.dayParts || ['Morning', 'Afternoon', 'Evening', 'Night', 'Self Study'];
   }, [activePlanner]);
 
+  const mobileVisibleDayParts = useMemo(() => {
+    if (mobileGridPartFilter === 'all') return dayParts;
+    return dayParts.filter((p) => p === mobileGridPartFilter);
+  }, [dayParts, mobileGridPartFilter]);
+
   const updateScrollState = React.useCallback(() => {
     const el = matrixScrollRef.current;
     if (!el) return;
@@ -550,7 +649,31 @@ export function PlannerView() {
   const overallRate = totalTasks > 0 ? Math.round((completedTasksCount / totalTasks) * 100) : 0;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#f8f6f1] dark:bg-[#121317] h-full pb-16 md:pb-0 overflow-hidden">
+    <div
+      ref={pinchContainerRef}
+      className="flex-1 flex flex-col min-w-0 bg-[#f8f6f1] dark:bg-[#121317] h-full pb-16 md:pb-0 overflow-hidden relative"
+    >
+      {/* Real-time Pinch to Zoom HUD Feedback (Both thumbs inward = zoom out, outward = zoom in) */}
+      {isPinching && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1f2126]/90 dark:bg-[#eceef2]/95 text-white dark:text-[#121317] shadow-xl backdrop-blur-md border border-white/20">
+            {pinchFeedbackZoom >= 100 ? (
+              <ZoomIn className="w-4 h-4 text-blue-400 dark:text-blue-600 shrink-0" />
+            ) : (
+              <ZoomOut className="w-4 h-4 text-amber-400 dark:text-amber-600 shrink-0" />
+            )}
+            <span className="text-xs font-black tabular-nums">{pinchFeedbackZoom}%</span>
+            <span className="text-[10px] opacity-80 font-medium">
+              {pinchFeedbackZoom > 100
+                ? 'Zoomed In (Thumbs Outward)'
+                : pinchFeedbackZoom < 100
+                ? 'Zoomed Out (Thumbs Inward)'
+                : 'Default (100%)'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Top Planner Controls Bar */}
       <div className="px-3 sm:px-6 py-2 sm:py-2.5 border-b border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9]/90 dark:bg-[#1a1b20]/90 backdrop-blur-xs shrink-0 flex flex-col gap-1.5 sm:gap-2">
         {/* Main Header Row: Title & High Priority Actions */}
@@ -645,9 +768,12 @@ export function PlannerView() {
               />
             </div>
 
-            {/* Zoom Controller (Desktop only) */}
+            {/* Zoom Controller - full on desktop, compact on mobile */}
             <div className="hidden sm:block">
               <ZoomController zoom={zoom} onZoomChange={handleZoomChange} />
+            </div>
+            <div className="sm:hidden flex items-center">
+              <ZoomController compact zoom={zoom} onZoomChange={handleZoomChange} />
             </div>
 
             {/* Add Task Button */}
@@ -751,10 +877,10 @@ export function PlannerView() {
         </div>
       )}
 
-      {/* Zoomable Content Area (Max 50% Zoom Out on Desktop/Tablet) */}
+      {/* Zoomable Content Area (Min 50%, Max 175% for Mobile Pinch & Desktop) */}
       <div
         className="flex-1 flex flex-col min-h-0 overflow-hidden"
-        style={{ zoom: isMobileOrTouch ? undefined : `${zoom}%` }}
+        style={{ zoom: `${zoom}%` }}
       >
         {/* MOBILE DAY FOCUS MODE (When on mobile and mobileViewMode === 'day-focus') */}
       <div
@@ -1120,212 +1246,432 @@ export function PlannerView() {
       </div>
 
       {/* ========================================================= */}
-      {/* MOBILE GRID MODE (Vertical responsive grid, no sideways scroll) */}
+      {/* MOBILE 2D MATRIX GRID (Authentic visual schedule grid)   */}
       {/* ========================================================= */}
       <div
-        id="mobile-grid-scroll"
-        className={`md:hidden flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-3.5 pb-28 ${
-          mobileViewMode === 'matrix' ? 'block' : 'hidden'
+        id="mobile-matrix-grid-scroll"
+        className={`md:hidden flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-28 select-none ${
+          mobileViewMode === 'matrix' ? 'flex flex-col' : 'hidden'
         }`}
         style={{
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-y',
         }}
       >
-        {/* Mobile Grid Header Bar */}
-        <div className="flex items-center justify-between pb-1 text-xs text-[#606470] dark:text-[#9aa0ae]">
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[#1f2126] dark:text-[#eceef2]">
-              Planner Grid ({days.length} {days.length === 1 ? 'day' : 'days'})
+        {/* Mobile Grid Column Filter & Navigation Controls */}
+        <div className="sticky top-0 z-40 px-2.5 sm:px-3 py-2 bg-[#fdfcf9] dark:bg-[#1a1b20] border-b border-[#e5e2da] dark:border-[#292b34] flex flex-col gap-1.5 shrink-0 shadow-2xs">
+          <div className="flex items-center justify-between gap-1 text-xs flex-wrap">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <LayoutGrid className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="font-bold text-[#1f2126] dark:text-[#eceef2] text-xs">
+                Grid Matrix
+              </span>
+              <span className="text-[10px] text-[#8c909c]">
+                ({days.length}d)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {/* Layout Density Switcher: Table vs Roomy Cards */}
+              <div className="flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setMobileGridLayout('matrix')}
+                  className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer ${
+                    mobileGridLayout === 'matrix'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-[#606470] dark:text-[#9aa0ae]'
+                  }`}
+                  title="Side-by-side Table Columns"
+                >
+                  Table
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileGridLayout('cards')}
+                  className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer ${
+                    mobileGridLayout === 'cards'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-[#606470] dark:text-[#9aa0ae]'
+                  }`}
+                  title="Spacious Multi-Column Cards"
+                >
+                  Cards
+                </button>
+              </div>
+
+              {/* Compact Zoom Controls on Mobile */}
+              <ZoomController compact zoom={zoom} onZoomChange={handleZoomChange} />
+
+              {visibleDays.includes(todayStr) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById(
+                      mobileGridLayout === 'matrix'
+                        ? `mobile-matrix-day-${todayStr}`
+                        : `mobile-card-day-${todayStr}`
+                    );
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-500/30 rounded-md flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Calendar className="w-2.5 h-2.5" />
+                  <span>Today</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Day-Part Column Quick Selector & Gesture Tip */}
+          <div className="flex items-center justify-between gap-1 overflow-x-auto pb-0.5 scrollbar-none text-[10px]">
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[#8c909c] font-semibold shrink-0 mr-0.5 text-[9px]">Columns:</span>
+              <button
+                type="button"
+                onClick={() => setMobileGridPartFilter('all')}
+                className={`px-2 py-0.5 rounded-md font-semibold transition-all shrink-0 cursor-pointer ${
+                  mobileGridPartFilter === 'all'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#606470] dark:text-[#9aa0ae] border border-[#e5e2da] dark:border-[#292b34]'
+                }`}
+              >
+                All Parts ({dayParts.length})
+              </button>
+              {dayParts.map((part) => (
+                <button
+                  key={part}
+                  type="button"
+                  onClick={() => setMobileGridPartFilter(part)}
+                  className={`px-2 py-0.5 rounded-md font-semibold transition-all shrink-0 cursor-pointer ${
+                    mobileGridPartFilter === part
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#606470] dark:text-[#9aa0ae] border border-[#e5e2da] dark:border-[#292b34]'
+                  }`}
+                >
+                  {part}
+                </button>
+              ))}
+            </div>
+
+            <span className="text-[9px] text-[#8c909c] hidden xs:inline shrink-0 font-medium">
+              Pinch 2 thumbs: Inward = out · Outward = in
             </span>
           </div>
-          {visibleDays.includes(todayStr) && (
-            <button
-              type="button"
-              onClick={() => {
-                const el = document.getElementById(`mobile-grid-day-${todayStr}`);
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className="px-2.5 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-500/30 rounded-lg flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-            >
-              <Calendar className="w-3 h-3" />
-              <span>Today</span>
-            </button>
-          )}
         </div>
 
-        {/* Days List in Mobile Grid Mode */}
-        {days.map((dateStr) => {
-          const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
-          const doneCount = dayTasks.filter((t) => t.isCompleted).length;
-          const isCurrent = isToday(dateStr);
+        {/* VIEW A: 2D Table Matrix (Optimized spacing & crisp typography) */}
+        {mobileGridLayout === 'matrix' ? (
+          <div className="w-full flex-1">
+            <table className="w-full table-fixed border-collapse border-spacing-0">
+              <thead>
+                <tr>
+                  {/* Top-Left Sticky Corner Header */}
+                  <th className="sticky top-[73px] left-0 z-30 w-11 min-w-[44px] max-w-[44px] p-1 bg-[#f4f2ec] dark:bg-[#22242b] border-b border-r border-[#e5e2da] dark:border-[#292b34] text-center shadow-[1px_1px_2px_rgba(0,0,0,0.04)]">
+                    <span className="text-[9px] font-bold text-[#606470] dark:text-[#9aa0ae] block leading-none">Days</span>
+                    <span className="text-[8px] text-[#8c909c] block mt-0.5 font-normal">↓</span>
+                  </th>
 
-          return (
-            <div
-              key={dateStr}
-              id={`mobile-grid-day-${dateStr}`}
-              className={`rounded-2xl border transition-all p-3 sm:p-4 shadow-2xs ${
-                isCurrent
-                  ? 'border-blue-400/80 dark:border-blue-600/80 bg-[#f7faff] dark:bg-[#151c28]'
-                  : 'border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9] dark:bg-[#1a1b20]'
-              }`}
-            >
-              {/* Day Header Row */}
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#e5e2da]/70 dark:border-[#292b34]/70">
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-sm text-[#1f2126] dark:text-[#eceef2]">
-                      {getWeekdayName(dateStr)}, {formatShortDate(dateStr)}
-                    </span>
-                    {isCurrent && (
-                      <span className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-600 text-white rounded-md uppercase tracking-wider">
-                        Today
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-[#8c909c] font-medium mt-0.5">
-                    {doneCount} of {dayTasks.length} {dayTasks.length === 1 ? 'task' : 'tasks'} completed
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileSelectedDate(dateStr);
-                      setMobileViewMode('day-focus');
-                    }}
-                    className="px-2 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-md transition-colors cursor-pointer"
-                    title="Focus on this day in Agenda mode"
-                  >
-                    Focus Day →
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenAddTask(dateStr, dayParts[0] || 'Morning')}
-                    className="p-1 px-2 text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3 stroke-[3]" />
-                    <span>Add</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Day Parts Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {dayParts.map((dayPart) => {
-                  const cellTasks = dayTasks.filter((t) => t.dayPart === dayPart);
-                  return (
-                    <div
-                      key={dayPart}
-                      className="rounded-xl border border-[#e5e2da]/80 dark:border-[#292b34]/80 bg-[#f8f6f1]/60 dark:bg-[#141519]/60 p-2 flex flex-col justify-between min-h-[70px]"
-                    >
-                      <div className="flex items-center justify-between pb-1 border-b border-[#e5e2da]/40 dark:border-[#292b34]/40 mb-1.5">
-                        <span className="text-[11px] font-bold text-[#1f2126] dark:text-[#eceef2] flex items-center gap-1">
-                          <Layers className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                          {dayPart}
-                        </span>
-                        <span className="text-[9px] text-[#8c909c] font-medium">
-                          {cellTasks.length} {cellTasks.length === 1 ? 'task' : 'tasks'}
-                        </span>
-                      </div>
-
-                      {/* Tasks in this dayPart */}
-                      <div className="space-y-1.5 flex-1">
-                        {cellTasks.length === 0 ? (
-                          <div className="py-1 text-center text-[10px] text-[#8c909c] italic">
-                            No tasks
-                          </div>
-                        ) : (
-                          cellTasks.map((task) => {
-                            const subj = getSubject(task.subjectId);
-                            const isSelected = selectedTaskIds.has(task.id);
-
-                            return (
-                              <div
-                                key={task.id}
-                                className={`flex items-start justify-between gap-1.5 p-1.5 rounded-lg border transition-all ${
-                                  isSelected
-                                    ? 'border-blue-500 ring-1 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
-                                    : task.isCompleted
-                                    ? 'bg-[#f4f2ec]/60 dark:bg-[#15161a] border-[#e5e2da] dark:border-[#292b34] opacity-60'
-                                    : 'bg-[#fdfcf9] dark:bg-[#1a1b20] border-[#e5e2da] dark:border-[#292b34]'
-                                }`}
-                              >
-                                <div className="flex items-start gap-1 flex-1 min-w-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleTaskComplete(task.id)}
-                                    className="p-1 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0 cursor-pointer"
-                                    aria-label={task.isCompleted ? 'Mark incomplete' : 'Mark done'}
-                                  >
-                                    {task.isCompleted ? (
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                                    ) : (
-                                      <Circle className="w-3.5 h-3.5" />
-                                    )}
-                                  </button>
-
-                                  <div
-                                    className="flex-1 min-w-0 cursor-pointer pt-0.5"
-                                    onClick={() => {
-                                      setTaskToEdit(task);
-                                      setIsTaskModalOpen(true);
-                                    }}
-                                  >
-                                    <div
-                                      className={`text-[11px] font-medium leading-snug break-words ${
-                                        task.isCompleted
-                                          ? 'line-through text-[#8c909c] dark:text-[#727784]'
-                                          : 'text-[#1f2126] dark:text-[#eceef2]'
-                                      }`}
-                                    >
-                                      {task.title}
-                                    </div>
-                                    {subj && (
-                                      <span
-                                        className="inline-block mt-0.5 px-1 py-0.2 text-[8px] font-bold rounded"
-                                        style={{
-                                          backgroundColor: `${subj.color}20`,
-                                          color: subj.color,
-                                        }}
-                                      >
-                                        {subj.name}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() => setMovingTask(task)}
-                                  className="p-1 text-[#8c909c] hover:text-blue-600 rounded transition-colors shrink-0 cursor-pointer"
-                                  title="Move task"
-                                  aria-label="Shift task"
-                                >
-                                  <MoveRight className="w-3 h-3" />
-                                </button>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-
-                      {/* Quick add to this dayPart */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAddTask(dateStr, dayPart)}
-                        className="w-full mt-1.5 py-0.5 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-blue-500 rounded text-[9px] text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  {/* Sticky Day-Part Column Headers */}
+                  {mobileVisibleDayParts.map((part) => {
+                    const partTotal = filteredTasks.filter((t) => t.dayPart === part).length;
+                    return (
+                      <th
+                        key={part}
+                        className="sticky top-[73px] z-20 p-1.5 bg-[#f4f2ec] dark:bg-[#22242b] border-b border-r border-[#e5e2da] dark:border-[#292b34] text-center shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
                       >
-                        <Plus className="w-2.5 h-2.5" /> Add to {dayPart}
-                      </button>
-                    </div>
+                        <span className="text-[10px] font-bold text-[#1f2126] dark:text-[#eceef2] block truncate">
+                          {part}
+                        </span>
+                        <span className="text-[8px] font-medium text-[#8c909c] block">
+                          {partTotal} {partTotal === 1 ? 'task' : 'tasks'}
+                        </span>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((dateStr) => {
+                  const isCurrent = isToday(dateStr);
+                  const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
+                  const doneCount = dayTasks.filter((t) => t.isCompleted).length;
+
+                  return (
+                    <tr
+                      key={dateStr}
+                      id={`mobile-matrix-day-${dateStr}`}
+                      className={isCurrent ? 'bg-blue-50/20 dark:bg-blue-950/20' : ''}
+                    >
+                      {/* Sticky Left Day Column Header */}
+                      <td
+                        onClick={() => {
+                          setMobileSelectedDate(dateStr);
+                          setMobileViewMode('day-focus');
+                        }}
+                        className={`sticky left-0 z-10 w-11 min-w-[44px] max-w-[44px] p-1 border-b border-r border-[#e5e2da] dark:border-[#292b34] text-center align-top cursor-pointer transition-colors shadow-[1px_0_2px_rgba(0,0,0,0.04)] ${
+                          isCurrent
+                            ? 'bg-[#edf4ff] dark:bg-[#1a2333] hover:bg-[#e2edff]'
+                            : 'bg-[#f8f6f1] dark:bg-[#16171b] hover:bg-[#f0ece1]'
+                        }`}
+                        title="Tap to open in Day Agenda"
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wider block text-[#8c909c]">
+                          {getWeekdayName(dateStr).slice(0, 3)}
+                        </span>
+                        <span
+                          className={`text-xs font-black block mt-0.5 leading-none ${
+                            isCurrent
+                              ? 'text-blue-600 dark:text-blue-400'
+                              : 'text-[#1f2126] dark:text-[#eceef2]'
+                          }`}
+                        >
+                          {formatShortDate(dateStr).split(' ')[1]}
+                        </span>
+                        {isCurrent && (
+                          <span className="inline-block mt-0.5 px-0.5 py-0.2 bg-blue-600 text-white rounded text-[7px] font-bold uppercase">
+                            Today
+                          </span>
+                        )}
+                        <span className="text-[8px] text-[#8c909c] font-semibold block mt-0.5 tabular-nums">
+                          {doneCount}/{dayTasks.length}
+                        </span>
+                      </td>
+
+                      {/* Intersecting Matrix Cells */}
+                      {mobileVisibleDayParts.map((dayPart) => {
+                        const cellTasks = dayTasks.filter((t) => t.dayPart === dayPart);
+
+                        return (
+                          <td
+                            key={dayPart}
+                            className={`p-1.5 border-b border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-colors min-h-[56px] ${
+                              isCurrent ? 'bg-blue-500/5' : 'bg-[#fdfcf9] dark:bg-[#1a1b20]'
+                            }`}
+                          >
+                            <div className="space-y-1 min-h-[38px]">
+                              {cellTasks.map((task) => {
+                                const subj = getSubject(task.subjectId);
+                                const isDone = task.isCompleted;
+
+                                return (
+                                  <div
+                                    key={task.id}
+                                    style={{
+                                      borderLeftWidth: subj ? '3px' : '1px',
+                                      borderLeftColor: subj ? subj.color : undefined,
+                                    }}
+                                    className={`flex items-start gap-1 p-1 rounded-md border text-[10px] transition-all leading-tight relative overflow-hidden ${
+                                      isDone
+                                        ? 'bg-[#f4f2ec]/60 dark:bg-[#15161a] border-[#e5e2da] dark:border-[#292b34] opacity-60'
+                                        : 'bg-[#fdfcf9] dark:bg-[#202127] border-[#e5e2da] dark:border-[#292b34] shadow-2xs'
+                                    }`}
+                                  >
+                                    {/* Complete Checkbox */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleTaskComplete(task.id);
+                                      }}
+                                      className="text-[#8c909c] hover:text-emerald-600 shrink-0 mt-0.5 cursor-pointer p-0.5 -m-0.5"
+                                      aria-label={isDone ? 'Mark incomplete' : 'Mark done'}
+                                    >
+                                      {isDone ? (
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                      ) : (
+                                        <Circle className="w-3 h-3" />
+                                      )}
+                                    </button>
+
+                                    {/* Task Title */}
+                                    <div
+                                      className="flex-1 min-w-0 cursor-pointer"
+                                      onClick={() => {
+                                        setTaskToEdit(task);
+                                        setIsTaskModalOpen(true);
+                                      }}
+                                    >
+                                      <span
+                                        className={`block line-clamp-2 break-words ${
+                                          isDone
+                                            ? 'line-through text-[#8c909c] dark:text-[#727784]'
+                                            : 'text-[#1f2126] dark:text-[#eceef2] font-medium'
+                                        }`}
+                                      >
+                                        {task.title}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Cell quick add button */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAddTask(dateStr, dayPart)}
+                              className="w-full mt-1 py-0.5 border border-dashed border-[#e5e2da]/70 dark:border-[#292b34]/70 hover:border-blue-500 rounded text-[8px] text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center opacity-50 hover:opacity-100 transition-all cursor-pointer"
+                              title={`Add task to ${dayPart}`}
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
                   );
                 })}
-              </div>
-            </div>
-          );
-        })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          /* VIEW B: Spacious Multi-Column Schedule Cards (Roomy, zero-cramming) */
+          <div className="p-2.5 sm:p-4 space-y-3">
+            {days.map((dateStr) => {
+              const isCurrent = isToday(dateStr);
+              const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
+              const doneCount = dayTasks.filter((t) => t.isCompleted).length;
+
+              return (
+                <div
+                  key={dateStr}
+                  id={`mobile-card-day-${dateStr}`}
+                  className={`bg-[#fdfcf9] dark:bg-[#1a1b20] border rounded-2xl p-3 shadow-2xs space-y-2.5 transition-all ${
+                    isCurrent
+                      ? 'border-blue-500/40 ring-1 ring-blue-500/20'
+                      : 'border-[#e5e2da] dark:border-[#292b34]'
+                  }`}
+                >
+                  {/* Day Card Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-[#e5e2da]/70 dark:border-[#292b34]/70">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-[#1f2126] dark:text-[#eceef2]">
+                        {getWeekdayName(dateStr)}, {formatShortDate(dateStr)}
+                      </span>
+                      {isCurrent && (
+                        <span className="px-1.5 py-0.2 bg-blue-600 text-white rounded text-[8px] font-bold uppercase">
+                          Today
+                        </span>
+                      )}
+                      <span className="text-[10px] text-[#8c909c] font-medium">
+                        {doneCount}/{dayTasks.length} done
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddTask(dateStr, dayParts[0] || 'Morning')}
+                      className="px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-500/20 rounded-lg flex items-center gap-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Task</span>
+                    </button>
+                  </div>
+
+                  {/* 2-Column Responsive Day Parts Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {mobileVisibleDayParts.map((part) => {
+                      const partTasks = dayTasks.filter((t) => t.dayPart === part);
+
+                      return (
+                        <div
+                          key={part}
+                          className="bg-[#f8f6f1] dark:bg-[#15161a] border border-[#e5e2da]/70 dark:border-[#292b34]/70 rounded-xl p-2.5 flex flex-col justify-between min-h-[85px]"
+                        >
+                          <div>
+                            {/* Part Subheader */}
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-[#606470] dark:text-[#9aa0ae] mb-1.5">
+                              <span>{part}</span>
+                              <span className="text-[9px] text-[#8c909c]">
+                                {partTasks.length} {partTasks.length === 1 ? 'task' : 'tasks'}
+                              </span>
+                            </div>
+
+                            {/* Tasks List */}
+                            <div className="space-y-1.5">
+                              {partTasks.map((task) => {
+                                const subj = getSubject(task.subjectId);
+                                const isDone = task.isCompleted;
+
+                                return (
+                                  <div
+                                    key={task.id}
+                                    style={{
+                                      borderLeftWidth: subj ? '3px' : '1px',
+                                      borderLeftColor: subj ? subj.color : undefined,
+                                    }}
+                                    className={`flex items-start gap-2 p-2 rounded-lg border text-xs leading-snug transition-all ${
+                                      isDone
+                                        ? 'bg-[#f4f2ec]/60 dark:bg-[#121317] border-[#e5e2da] dark:border-[#292b34] opacity-60'
+                                        : 'bg-[#fdfcf9] dark:bg-[#1f2127] border-[#e5e2da] dark:border-[#292b34] shadow-2xs'
+                                    }`}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleTaskComplete(task.id)}
+                                      className="text-[#8c909c] hover:text-emerald-600 shrink-0 mt-0.5 cursor-pointer p-0.5 -m-0.5"
+                                      aria-label={isDone ? 'Mark incomplete' : 'Mark done'}
+                                    >
+                                      {isDone ? (
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                      ) : (
+                                        <Circle className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+
+                                    <div
+                                      className="flex-1 min-w-0 cursor-pointer"
+                                      onClick={() => {
+                                        setTaskToEdit(task);
+                                        setIsTaskModalOpen(true);
+                                      }}
+                                    >
+                                      <span
+                                        className={`block font-medium ${
+                                          isDone
+                                            ? 'line-through text-[#8c909c] dark:text-[#727784]'
+                                            : 'text-[#1f2126] dark:text-[#eceef2]'
+                                        }`}
+                                      >
+                                        {task.title}
+                                      </span>
+                                      {subj && (
+                                        <span
+                                          className="inline-block mt-0.5 px-1 py-0.2 rounded text-[8px] font-semibold"
+                                          style={{
+                                            backgroundColor: `${subj.color}20`,
+                                            color: subj.color,
+                                          }}
+                                        >
+                                          {subj.name}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Quick Add Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddTask(dateStr, part)}
+                            className="mt-2 py-1 text-[10px] text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-blue-500 rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add to {part}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ========================================================= */}

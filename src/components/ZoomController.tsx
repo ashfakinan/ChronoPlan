@@ -5,16 +5,18 @@ interface ZoomControllerProps {
   zoom: number; // percentage, e.g. 100, 80, 50
   onZoomChange: (newZoom: number) => void;
   minZoom?: number; // default 50
-  maxZoom?: number; // default 100
+  maxZoom?: number; // default 175
   className?: string;
+  compact?: boolean;
 }
 
 export function ZoomController({
   zoom,
   onZoomChange,
   minZoom = 50,
-  maxZoom = 100,
+  maxZoom = 175,
   className = '',
+  compact = false,
 }: ZoomControllerProps) {
   const step = 10;
 
@@ -33,10 +35,48 @@ export function ZoomController({
   const isMin = zoom <= minZoom;
   const isMax = zoom >= maxZoom;
 
+  if (compact) {
+    return (
+      <div
+        className={`inline-flex items-center gap-0.5 bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] shadow-2xs select-none ${className}`}
+        title="Zoom (Pinch with two thumbs or tap +/-)"
+      >
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          disabled={isMin}
+          className="p-1 rounded text-xs font-semibold text-[#1f2126] dark:text-[#eceef2] hover:bg-[#eae7df] dark:hover:bg-[#2f313c] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          title="Zoom Out (Thumbs Inward)"
+          aria-label="Zoom Out"
+        >
+          <ZoomOut className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="px-1.5 py-0.5 text-[10px] font-bold tabular-nums rounded text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer"
+          title="Reset to 100%"
+        >
+          {zoom}%
+        </button>
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          disabled={isMax}
+          className="p-1 rounded text-xs font-semibold text-[#1f2126] dark:text-[#eceef2] hover:bg-[#eae7df] dark:hover:bg-[#2f313c] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          title="Zoom In (Thumbs Outward)"
+          aria-label="Zoom In"
+        >
+          <ZoomIn className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`inline-flex items-center gap-1 bg-[#f4f2ec] dark:bg-[#22242b] p-1 rounded-xl border border-[#e5e2da] dark:border-[#292b34] shadow-2xs select-none ${className}`}
-      title="Zoom view (Zoom out max 50%)"
+      title="Zoom view (50% - 175%)"
     >
       <button
         type="button"
@@ -70,6 +110,11 @@ export function ZoomController({
             Min
           </span>
         )}
+        {isMax && (
+          <span className="text-[9px] font-extrabold uppercase px-1 py-0.2 rounded bg-blue-500/20 text-blue-700 dark:text-blue-400">
+            Max
+          </span>
+        )}
       </button>
 
       <button
@@ -81,7 +126,7 @@ export function ZoomController({
             ? 'opacity-35 cursor-not-allowed text-[#8c909c]'
             : 'text-[#1f2126] dark:text-[#eceef2] hover:bg-[#eae7df] dark:hover:bg-[#2f313c] active:scale-95'
         }`}
-        title={isMax ? 'Maximum zoom in reached (100%)' : 'Zoom In (+10%)'}
+        title={isMax ? 'Maximum zoom in reached (175%)' : 'Zoom In (+10%)'}
         aria-label="Zoom In"
       >
         <ZoomIn className="w-3.5 h-3.5" />
