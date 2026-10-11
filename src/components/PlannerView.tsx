@@ -1364,7 +1364,7 @@ export function PlannerView() {
               <thead>
                 <tr>
                   {/* Top-Left Sticky Corner Header */}
-                  <th className="sticky top-[73px] left-0 z-30 w-16 min-w-[64px] max-w-[64px] p-2 bg-[#f4f2ec] dark:bg-[#22242b] border-b border-r border-[#e5e2da] dark:border-[#292b34] text-center shadow-[1px_1px_2px_rgba(0,0,0,0.04)]">
+                  <th className="sticky top-[73px] left-0 z-30 w-16 min-w-[64px] max-w-[64px] p-2 bg-[#f4f2ec] dark:bg-[#22242b] border-b border-r border-[#e5e2da] dark:border-[#292b34] text-center shadow-[1px_1px_2px_rgba(0,0,0,0.04)] [transform:translateZ(0)] [backface-visibility:hidden]">
                     <span className="text-[10px] font-bold text-[#606470] dark:text-[#9aa0ae] block leading-none">Days</span>
                     <span className="text-[9px] text-[#8c909c] block mt-0.5 font-normal">↓</span>
                   </th>
