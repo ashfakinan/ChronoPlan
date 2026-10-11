@@ -22,7 +22,7 @@ function MainApp() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f8f6f1] dark:bg-[#121317] text-[#1f2126] dark:text-[#eceef2] font-sans selection:bg-blue-500/20">
+    <div className="h-screen h-[100dvh] flex flex-col bg-[#f8f6f1] dark:bg-[#121317] text-[#1f2126] dark:text-[#eceef2] font-sans selection:bg-blue-500/20 overflow-hidden">
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}

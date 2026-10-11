@@ -99,6 +99,30 @@ export function PlannerView() {
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [scrollPercent, setScrollPercent] = useState(0);
 
+  // Responsive device check for mobile & touch devices
+  const [isMobileDevice, setIsMobileDevice] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  });
+
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const hasTouch = 'ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0);
+    return hasTouch || window.innerWidth < 1024;
+  });
+
+  const isMobileOrTouch = isMobileDevice || isTouchDevice;
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 768;
+      const hasTouch = 'ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0);
+      setIsMobileDevice(isMobile);
+      setIsTouchDevice(hasTouch || window.innerWidth < 1024);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Touch and hold (long press) detection for task selection
   const holdTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const touchStartPosRef = React.useRef<{ x: number; y: number } | null>(null);
@@ -124,7 +148,7 @@ export function PlannerView() {
         next.add(taskId);
         return next;
       });
-    }, 450);
+    }, 600);
   };
 
   const cancelHoldDetection = () => {
@@ -139,7 +163,7 @@ export function PlannerView() {
     if (!touchStartPosRef.current || !holdTimerRef.current) return;
     const dx = Math.abs(clientX - touchStartPosRef.current.x);
     const dy = Math.abs(clientY - touchStartPosRef.current.y);
-    if (dx > 10 || dy > 10) {
+    if (dx > 6 || dy > 6) {
       cancelHoldDetection();
     }
   };
@@ -368,7 +392,12 @@ export function PlannerView() {
   React.useEffect(() => {
     const el = matrixScrollRef.current;
     if (!el) return;
-    updateScrollState();
+
+    // Use requestAnimationFrame to ensure accurate metrics after render/tab switch
+    const rafId = requestAnimationFrame(() => {
+      updateScrollState();
+    });
+
     el.addEventListener('scroll', updateScrollState, { passive: true });
     window.addEventListener('resize', updateScrollState);
 
@@ -378,16 +407,17 @@ export function PlannerView() {
     observer.observe(el);
 
     return () => {
+      cancelAnimationFrame(rafId);
       el.removeEventListener('scroll', updateScrollState);
       window.removeEventListener('resize', updateScrollState);
       observer.disconnect();
     };
-  }, [days, dayParts, matrixOrientation, zoom, updateScrollState]);
+  }, [days, dayParts, matrixOrientation, zoom, mobileViewMode, updateScrollState]);
 
   const sideScroll = (direction: 'left' | 'right', amount?: number) => {
     const el = matrixScrollRef.current;
     if (!el) return;
-    const delta = amount ?? Math.max(260, Math.floor(el.clientWidth * 0.45));
+    const delta = amount ?? Math.max(220, Math.floor(el.clientWidth * 0.5));
     el.scrollBy({
       left: direction === 'left' ? -delta : delta,
       behavior: 'smooth',
@@ -416,18 +446,48 @@ export function PlannerView() {
   };
 
   const scrollToToday = () => {
+    if (mobileViewMode === 'day-focus') {
+      if (visibleDays.includes(todayStr)) {
+        setMobileSelectedDate(todayStr);
+      }
+      return;
+    }
+    const mobileTodayEl = document.getElementById(`mobile-grid-day-${todayStr}`);
+    if (mobileTodayEl) {
+      mobileTodayEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     const el = matrixScrollRef.current;
     if (!el) return;
     const todayEl = el.querySelector(`[data-matrix-header-date="${todayStr}"]`) as HTMLElement;
     if (todayEl) {
-      todayEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      if (matrixOrientation === 'days-on-left') {
+        // Today is a row: scroll vertically to center it
+        todayEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      } else {
+        // Today is a column: scroll horizontally to center it
+        todayEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
     }
   };
 
-  const handleHeaderWheel = (e: React.WheelEvent) => {
-    if (e.deltaY !== 0 && matrixScrollRef.current) {
-      matrixScrollRef.current.scrollLeft += e.deltaY;
+  const scrollToDayPart = (partName: string) => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const header = el.querySelector(`[data-daypart-header="${partName}"]`) as HTMLElement;
+    if (header) {
+      const dayCol = el.querySelector('th.sticky') as HTMLElement;
+      const stickyWidth = dayCol ? dayCol.getBoundingClientRect().width : (isMobileDevice ? 66 : 170);
+      const headerRect = header.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const targetScroll = Math.max(0, el.scrollLeft + (headerRect.left - elRect.left) - stickyWidth);
+      el.scrollTo({ left: targetScroll, behavior: 'smooth' });
     }
+  };
+
+  // Do not hijack vertical mouse wheel scrolling to horizontal side-scroll
+  const handleHeaderWheel = () => {
+    // Left empty deliberately: allow standard natural vertical scroll
   };
 
   // Tasks belonging to this planner
@@ -490,220 +550,184 @@ export function PlannerView() {
   const overallRate = totalTasks > 0 ? Math.round((completedTasksCount / totalTasks) * 100) : 0;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#f8f6f1] dark:bg-[#121317] h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] pb-16 md:pb-0 overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-[#f8f6f1] dark:bg-[#121317] h-full pb-16 md:pb-0 overflow-hidden">
       {/* Top Planner Controls Bar */}
-      <div className="px-4 sm:px-6 py-2.5 sm:py-3 border-b border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9]/80 dark:bg-[#1a1b20]/80 backdrop-blur-xs flex flex-wrap items-center justify-between gap-3">
-        {/* Planner title & stats */}
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm sm:text-base font-bold text-[#1f2126] dark:text-[#eceef2] tracking-tight">
+      <div className="px-3 sm:px-6 py-2 sm:py-2.5 border-b border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9]/90 dark:bg-[#1a1b20]/90 backdrop-blur-xs shrink-0 flex flex-col gap-1.5 sm:gap-2">
+        {/* Main Header Row: Title & High Priority Actions */}
+        <div className="flex items-center justify-between gap-2">
+          {/* Planner Title */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h1 className="text-sm sm:text-base font-bold text-[#1f2126] dark:text-[#eceef2] tracking-tight truncate">
               {activePlanner.title}
             </h1>
             <button
               type="button"
               onClick={() => setIsPlannerModalOpen(true)}
-              className="p-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] rounded-md transition-colors"
+              className="p-1 text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] rounded-md transition-colors shrink-0"
               title="Edit Planner"
               aria-label="Edit Planner"
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
           </div>
-          {/* Unboxed clean metadata */}
-          <div className="flex items-center gap-1.5 text-[11px] text-[#606470] dark:text-[#9aa0ae] mt-0.5 flex-wrap">
+
+          {/* Right Header Actions */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Mobile View Switcher (Grid vs Agenda) */}
+            <div className="md:hidden flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
+              <button
+                type="button"
+                onClick={() => setMobileViewMode('matrix')}
+                className={`px-2 py-1 text-xs rounded-md font-semibold transition-colors flex items-center gap-1 min-h-[30px] ${
+                  mobileViewMode === 'matrix'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-[#606470] dark:text-[#9aa0ae]'
+                }`}
+                title="Grid Matrix View"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Grid</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileViewMode('day-focus')}
+                className={`px-2 py-1 text-xs rounded-md font-semibold transition-colors flex items-center gap-1 min-h-[30px] ${
+                  mobileViewMode === 'day-focus'
+                    ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs'
+                    : 'text-[#606470] dark:text-[#9aa0ae]'
+                }`}
+                title="Agenda Day-by-Day View"
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                <span>Agenda</span>
+              </button>
+            </div>
+
+            {/* Desktop Orientation Switcher */}
+            <div className="hidden lg:flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
+              <button
+                type="button"
+                onClick={() => setMatrixOrientation('days-on-left')}
+                className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[30px] ${
+                  matrixOrientation === 'days-on-left'
+                    ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
+                    : 'text-[#606470] dark:text-[#9aa0ae]'
+                }`}
+                title="Days on Left vertically, Day-Parts horizontally at top"
+              >
+                <ArrowUpDown className="w-3 h-3 text-blue-600" />
+                <span>Days on Left</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMatrixOrientation('days-on-top')}
+                className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[30px] ${
+                  matrixOrientation === 'days-on-top'
+                    ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
+                    : 'text-[#606470] dark:text-[#9aa0ae]'
+                }`}
+                title="Days horizontally at the top, Day-Parts down the side"
+              >
+                <ArrowLeftRight className="w-3 h-3 text-blue-600" />
+                <span>Days on Top</span>
+              </button>
+            </div>
+
+            {/* Search (Desktop) */}
+            <div className="relative hidden md:block">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8c909c]" />
+              <input
+                type="text"
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-7 pr-2.5 py-1 text-xs bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] rounded-lg text-[#1f2126] dark:text-[#eceef2] placeholder-[#8c909c] focus:outline-hidden focus:ring-1 focus:ring-blue-500 w-32 md:w-40"
+              />
+            </div>
+
+            {/* Zoom Controller (Desktop only) */}
+            <div className="hidden sm:block">
+              <ZoomController zoom={zoom} onZoomChange={handleZoomChange} />
+            </div>
+
+            {/* Add Task Button */}
+            <button
+              type="button"
+              onClick={() => {
+                const defaultDate = visibleDays.includes(todayStr) ? todayStr : (mobileSelectedDate || visibleDays[0] || todayStr);
+                handleOpenAddTask(defaultDate, dayParts[0] || 'Morning');
+              }}
+              className="px-3 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 min-h-[30px] sm:min-h-[34px] shadow-2xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Task</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Secondary Subtitle / Filter Row */}
+        <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5 scrollbar-none text-[11px] text-[#606470] dark:text-[#9aa0ae]">
+          {/* Metadata info */}
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
             <span>{formatDisplayDate(activePlanner.startDate)} – {formatDisplayDate(activePlanner.endDate)}</span>
             <span aria-hidden="true">·</span>
             <span>{visibleDays.length} {visibleDays.length === 1 ? 'Day' : 'Days'}</span>
-            {hiddenPastDaysCount > 0 && !showCompletedPastDays && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1">
-                  <span>Current day is TOP</span>
-                  <span className="text-[10px] opacity-75">({hiddenPastDaysCount} completed past {hiddenPastDaysCount === 1 ? 'day' : 'days'} hidden)</span>
-                </span>
-              </>
-            )}
             <span aria-hidden="true">·</span>
             <span className="font-semibold text-emerald-700 dark:text-emerald-400">
               {completedTasksCount}/{totalTasks} Done ({overallRate}%)
             </span>
           </div>
-        </div>
 
-        {/* View Controls & Filters */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Completed Past Days Toggle (when past days with completed tasks exist) */}
-          {hiddenPastDaysCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowCompletedPastDays(!showCompletedPastDays)}
-              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all flex items-center gap-1.5 border min-h-[34px] ${
-                showCompletedPastDays
-                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 font-semibold'
-                  : 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#606470] dark:text-[#9aa0ae] border-[#e5e2da] dark:border-[#292b34] hover:text-[#1f2126] dark:hover:text-[#eceef2]'
-              }`}
-              title={
-                showCompletedPastDays
-                  ? 'Hide completed past days to keep current day at top'
-                  : 'View past completed days'
-              }
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>
-                {showCompletedPastDays
-                  ? `Hide ${hiddenPastDaysCount} completed past ${hiddenPastDaysCount === 1 ? 'day' : 'days'}`
-                  : `${hiddenPastDaysCount} past completed ${hiddenPastDaysCount === 1 ? 'day' : 'days'} hidden`}
-              </span>
-            </button>
-          )}
+          {/* Quick Filter Buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Completed Past Days Toggle */}
+            {hiddenPastDaysCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowCompletedPastDays(!showCompletedPastDays)}
+                className={`px-2 py-0.5 text-[10px] rounded-md font-semibold transition-all flex items-center gap-1 border ${
+                  showCompletedPastDays
+                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
+                    : 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#606470] dark:text-[#9aa0ae] border-[#e5e2da] dark:border-[#292b34]'
+                }`}
+                title={showCompletedPastDays ? 'Hide completed past days' : 'View past completed days'}
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                <span>{showCompletedPastDays ? 'Hide Past' : `${hiddenPastDaysCount} Past`}</span>
+              </button>
+            )}
 
-          {/* Orientation Switcher (Days on Left vs Days on Top) */}
-          <div className="hidden lg:flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
+            {/* Select Tasks Toggle */}
             <button
               type="button"
-              onClick={() => setMatrixOrientation('days-on-left')}
-              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[30px] ${
-                matrixOrientation === 'days-on-left'
-                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
-                  : 'text-[#606470] dark:text-[#9aa0ae]'
+              onClick={() => {
+                setIsSelectionMode(!isSelectionMode);
+                if (isSelectionMode) setSelectedTaskIds(new Set());
+              }}
+              className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-colors flex items-center gap-1 border ${
+                isSelectionMode || selectedTaskIds.size > 0
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                  : 'bg-[#f4f2ec] dark:bg-[#22242b] text-[#606470] dark:text-[#9aa0ae] border-[#e5e2da] dark:border-[#292b34]'
               }`}
-              title="Days on Left vertically, Day-Parts horizontally at the top"
+              title="Batch select tasks"
             >
-              <ArrowUpDown className="w-3 h-3 text-blue-600" />
-              <span>Days on Left</span>
+              <CheckSquare className="w-3 h-3" />
+              <span>{selectedTaskIds.size > 0 ? `${selectedTaskIds.size}` : 'Select'}</span>
             </button>
+
+            {/* Subjects Button */}
             <button
               type="button"
-              onClick={() => setMatrixOrientation('days-on-top')}
-              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[30px] ${
-                matrixOrientation === 'days-on-top'
-                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
-                  : 'text-[#606470] dark:text-[#9aa0ae]'
-              }`}
-              title="Days horizontally at the top, Day-Parts down the side"
+              onClick={() => setIsSubjectModalOpen(true)}
+              className="px-2 py-0.5 text-[10px] font-medium text-[#1f2126] dark:text-[#eceef2] bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] rounded-md hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] transition-colors flex items-center gap-1"
             >
-              <ArrowLeftRight className="w-3 h-3 text-blue-600" />
-              <span>Days on Top</span>
+              <span
+                className="w-1.5 h-1.5 rounded-full inline-block"
+                style={{ backgroundColor: subjects[0]?.color || '#3B82F6' }}
+              />
+              <span>Subjects</span>
             </button>
           </div>
-
-          {/* Mobile View Switcher */}
-          <div className="md:hidden flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34]">
-            <button
-              type="button"
-              onClick={() => setMobileViewMode('matrix')}
-              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[32px] ${
-                mobileViewMode === 'matrix'
-                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
-                  : 'text-[#606470] dark:text-[#9aa0ae]'
-              }`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> Grid
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileViewMode('day-focus')}
-              className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors flex items-center gap-1 min-h-[32px] ${
-                mobileViewMode === 'day-focus'
-                  ? 'bg-[#fdfcf9] dark:bg-[#1a1b20] text-[#1f2126] dark:text-[#eceef2] shadow-2xs font-semibold'
-                  : 'text-[#606470] dark:text-[#9aa0ae]'
-              }`}
-            >
-              <CalendarDays className="w-3.5 h-3.5" /> Agenda
-            </button>
-          </div>
-
-          {/* Search (Desktop / Tablet) */}
-          <div className="relative hidden sm:block">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8c909c]" />
-            <input
-              type="text"
-              placeholder="Search tasks..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-7 pr-2.5 py-1 text-xs bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] rounded-lg text-[#1f2126] dark:text-[#eceef2] placeholder-[#8c909c] focus:outline-hidden focus:ring-1 focus:ring-blue-500 w-32 md:w-44"
-            />
-          </div>
-
-          {/* Batch Selection Toggle Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsSelectionMode(!isSelectionMode);
-              if (isSelectionMode) setSelectedTaskIds(new Set());
-            }}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 min-h-[34px] ${
-              isSelectionMode || selectedTaskIds.size > 0
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-[#1f2126] dark:text-[#eceef2] bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36]'
-            }`}
-            title="Batch select tasks to move between time blocks"
-          >
-            <CheckSquare className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">
-              {selectedTaskIds.size > 0 ? `${selectedTaskIds.size} Selected` : 'Select'}
-            </span>
-          </button>
-
-          {/* Zoom Controller (Max 50% Zoom Out) */}
-          <ZoomController zoom={zoom} onZoomChange={handleZoomChange} />
-
-          {/* Quick Side Scroll in Toolbar (PC / Desktop) */}
-          <div className="hidden lg:flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] min-h-[34px]">
-            <button
-              type="button"
-              onClick={() => sideScroll('left')}
-              disabled={!canScrollLeft}
-              className="p-1.5 rounded-md hover:bg-[#fdfcf9] dark:hover:bg-[#1a1b20] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-pointer"
-              title="Side scroll left (or hold Shift + Wheel)"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => jumpToSide(scrollPercent > 50 ? 'start' : 'end')}
-              className="px-2 py-1 text-xs font-semibold text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] transition-colors cursor-pointer flex items-center gap-1"
-              title={scrollPercent > 50 ? 'Jump to Start (Left)' : 'Jump to Other Side (Right)'}
-            >
-              <ArrowLeftRight className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-              <span>Side Scroll</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => sideScroll('right')}
-              disabled={!canScrollRight}
-              className="p-1.5 rounded-md hover:bg-[#fdfcf9] dark:hover:bg-[#1a1b20] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-pointer"
-              title="Side scroll right / to other side"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Manage Subjects */}
-          <button
-            type="button"
-            onClick={() => setIsSubjectModalOpen(true)}
-            className="px-2.5 py-1 text-xs font-medium text-[#1f2126] dark:text-[#eceef2] bg-[#f4f2ec] dark:bg-[#22242b] border border-[#e5e2da] dark:border-[#292b34] rounded-lg hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] transition-colors flex items-center gap-1.5 min-h-[34px]"
-          >
-            <span
-              className="w-2 h-2 rounded-full inline-block"
-              style={{ backgroundColor: subjects[0]?.color || '#3B82F6' }}
-            />
-            Subjects
-          </button>
-
-          {/* Add Task Button */}
-          <button
-            type="button"
-            onClick={() => {
-              const defaultDate = visibleDays.includes(todayStr) ? todayStr : (mobileSelectedDate || visibleDays[0] || todayStr);
-              handleOpenAddTask(defaultDate, dayParts[0] || 'Morning');
-            }}
-            className="px-3 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 min-h-[34px]"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Task</span>
-          </button>
         </div>
       </div>
 
@@ -727,21 +751,73 @@ export function PlannerView() {
         </div>
       )}
 
-      {/* Zoomable Content Area (Max 50% Zoom Out) */}
+      {/* Zoomable Content Area (Max 50% Zoom Out on Desktop/Tablet) */}
       <div
         className="flex-1 flex flex-col min-h-0 overflow-hidden"
-        style={{ zoom: `${zoom}%` }}
+        style={{ zoom: isMobileOrTouch ? undefined : `${zoom}%` }}
       >
         {/* MOBILE DAY FOCUS MODE (When on mobile and mobileViewMode === 'day-focus') */}
       <div
         id="day-focus-scroll"
-        className={`md:hidden flex-1 overflow-y-auto ${mobileViewMode === 'day-focus' ? 'block' : 'hidden'}`}
+        className={`md:hidden flex-1 overflow-y-auto pb-28 ${mobileViewMode === 'day-focus' ? 'block' : 'hidden'}`}
+        style={{
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
+        }}
       >
-        {/* Horizontal Day Selector Carousel */}
-        <div className="sticky top-0 z-10 bg-[#fdfcf9] dark:bg-[#1a1b20] border-b border-[#e5e2da] dark:border-[#292b34] px-3 py-2">
+        {/* Day Selector Header with Prev / Today / Next buttons */}
+        <div className="sticky top-0 z-10 bg-[#fdfcf9] dark:bg-[#1a1b20] border-b border-[#e5e2da] dark:border-[#292b34] px-3 py-2 space-y-2 shadow-2xs">
+          {/* Quick Date Navigation Arrows Row */}
+          <div className="flex items-center justify-between gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                const currentIndex = days.indexOf(mobileSelectedDate);
+                if (currentIndex > 0) {
+                  setMobileSelectedDate(days[currentIndex - 1]);
+                }
+              }}
+              disabled={days.indexOf(mobileSelectedDate) <= 0}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] border border-[#e5e2da] dark:border-[#292b34] disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 text-[#1f2126] dark:text-[#eceef2] cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Prev</span>
+            </button>
+
+            {visibleDays.includes(todayStr) && (
+              <button
+                type="button"
+                onClick={() => setMobileSelectedDate(todayStr)}
+                className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors flex items-center gap-1 cursor-pointer ${
+                  mobileSelectedDate === todayStr
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                }`}
+              >
+                <Calendar className="w-3 h-3" />
+                <span>Today</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                const currentIndex = days.indexOf(mobileSelectedDate);
+                if (currentIndex >= 0 && currentIndex < days.length - 1) {
+                  setMobileSelectedDate(days[currentIndex + 1]);
+                }
+              }}
+              disabled={days.indexOf(mobileSelectedDate) >= days.length - 1}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] border border-[#e5e2da] dark:border-[#292b34] disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 text-[#1f2126] dark:text-[#eceef2] cursor-pointer"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           <div
             id="day-carousel-scroll"
-            className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none"
+            className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none"
           >
             {days.map((d) => {
               const dayTasks = filteredTasks.filter((t) => t.date === d);
@@ -1043,99 +1119,353 @@ export function PlannerView() {
         </div>
       </div>
 
-      {/* MATRIX TABLE VIEW (Days on Left vertically, Day-Parts horizontally at top) */}
-      <div className={`flex-1 flex flex-col min-h-0 min-w-0 p-2 sm:p-4 overflow-hidden ${mobileViewMode === 'matrix' ? 'flex' : 'hidden md:flex'}`}>
-        {/* Dedicated Horizontal Side Scroll Slider ("slider type thing") */}
-        <div className="w-full shrink-0 mb-2 px-3 py-2 bg-[#fdfcf9] dark:bg-[#1a1b20] border border-[#e5e2da] dark:border-[#292b34] rounded-xl flex items-center justify-between gap-3 shadow-2xs">
-          {/* Left Controls */}
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => jumpToSide('start')}
-              disabled={!canScrollLeft}
-              className="px-2.5 py-1 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold flex items-center gap-0.5 transition-colors cursor-pointer text-[#1f2126] dark:text-[#eceef2]"
-              title="Jump to Start (Left)"
-            >
-              <ChevronsLeft className="w-3.5 h-3.5" />
-              <span>Start</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => sideScroll('left')}
-              disabled={!canScrollLeft}
-              className="p-1 px-1.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold flex items-center transition-colors cursor-pointer text-[#1f2126] dark:text-[#eceef2]"
-              title="Scroll Left"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Slider Control */}
-          <div className="flex-1 max-w-xl flex items-center gap-2.5 mx-auto min-w-0">
-            <span className="text-[11px] font-bold text-[#606470] dark:text-[#9aa0ae] shrink-0 select-none flex items-center gap-1">
-              <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="hidden sm:inline">Slider:</span>
-            </span>
-            <span className="text-[10px] text-[#8c909c] hidden sm:inline select-none">Start</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={scrollPercent}
-              onInput={handleSliderChange}
-              onChange={handleSliderChange}
-              aria-label="Horizontal scroll slider"
-              className="flex-1 min-w-[100px] h-2.5 bg-[#e5e2da] dark:bg-[#292b34] rounded-lg appearance-none cursor-ew-resize accent-blue-600 hover:accent-blue-700 active:accent-blue-800 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-              title={`Drag slider to view other side: ${scrollPercent}%`}
-            />
-            <span className="text-[10px] text-[#8c909c] hidden sm:inline select-none">Other Side</span>
-            <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 w-9 text-right tabular-nums shrink-0">
-              {scrollPercent}%
+      {/* ========================================================= */}
+      {/* MOBILE GRID MODE (Vertical responsive grid, no sideways scroll) */}
+      {/* ========================================================= */}
+      <div
+        id="mobile-grid-scroll"
+        className={`md:hidden flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-3.5 pb-28 ${
+          mobileViewMode === 'matrix' ? 'block' : 'hidden'
+        }`}
+        style={{
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
+        }}
+      >
+        {/* Mobile Grid Header Bar */}
+        <div className="flex items-center justify-between pb-1 text-xs text-[#606470] dark:text-[#9aa0ae]">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-[#1f2126] dark:text-[#eceef2]">
+              Planner Grid ({days.length} {days.length === 1 ? 'day' : 'days'})
             </span>
           </div>
-
-          {/* Right Controls */}
-          <div className="flex items-center gap-1 shrink-0">
-            {visibleDays.includes(todayStr) && matrixOrientation === 'days-on-top' && (
-              <button
-                type="button"
-                onClick={scrollToToday}
-                className="px-2 py-1 rounded-lg border border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30 hover:bg-blue-100 text-[11px] font-semibold transition-colors cursor-pointer"
-                title="Scroll horizontally to Today"
-              >
-                Today
-              </button>
-            )}
+          {visibleDays.includes(todayStr) && (
             <button
               type="button"
-              onClick={() => sideScroll('right')}
-              disabled={!canScrollRight}
-              className="p-1 px-1.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold flex items-center transition-colors cursor-pointer text-[#1f2126] dark:text-[#eceef2]"
-              title="Scroll Right"
+              onClick={() => {
+                const el = document.getElementById(`mobile-grid-day-${todayStr}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-500/30 rounded-lg flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
             >
-              <ChevronRight className="w-3.5 h-3.5" />
+              <Calendar className="w-3 h-3" />
+              <span>Today</span>
             </button>
-            <button
-              type="button"
-              onClick={() => jumpToSide('end')}
-              disabled={!canScrollRight}
-              className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:bg-blue-400 disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-bold flex items-center gap-0.5 transition-colors shadow-2xs cursor-pointer"
-              title="Jump to Other Side (Right)"
-            >
-              <span>Other Side</span>
-              <ChevronsRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          )}
         </div>
+
+        {/* Days List in Mobile Grid Mode */}
+        {days.map((dateStr) => {
+          const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
+          const doneCount = dayTasks.filter((t) => t.isCompleted).length;
+          const isCurrent = isToday(dateStr);
+
+          return (
+            <div
+              key={dateStr}
+              id={`mobile-grid-day-${dateStr}`}
+              className={`rounded-2xl border transition-all p-3 sm:p-4 shadow-2xs ${
+                isCurrent
+                  ? 'border-blue-400/80 dark:border-blue-600/80 bg-[#f7faff] dark:bg-[#151c28]'
+                  : 'border-[#e5e2da] dark:border-[#292b34] bg-[#fdfcf9] dark:bg-[#1a1b20]'
+              }`}
+            >
+              {/* Day Header Row */}
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#e5e2da]/70 dark:border-[#292b34]/70">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-sm text-[#1f2126] dark:text-[#eceef2]">
+                      {getWeekdayName(dateStr)}, {formatShortDate(dateStr)}
+                    </span>
+                    {isCurrent && (
+                      <span className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-600 text-white rounded-md uppercase tracking-wider">
+                        Today
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-[#8c909c] font-medium mt-0.5">
+                    {doneCount} of {dayTasks.length} {dayTasks.length === 1 ? 'task' : 'tasks'} completed
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileSelectedDate(dateStr);
+                      setMobileViewMode('day-focus');
+                    }}
+                    className="px-2 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-md transition-colors cursor-pointer"
+                    title="Focus on this day in Agenda mode"
+                  >
+                    Focus Day →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddTask(dateStr, dayParts[0] || 'Morning')}
+                    className="p-1 px-2 text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3 stroke-[3]" />
+                    <span>Add</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Day Parts Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {dayParts.map((dayPart) => {
+                  const cellTasks = dayTasks.filter((t) => t.dayPart === dayPart);
+                  return (
+                    <div
+                      key={dayPart}
+                      className="rounded-xl border border-[#e5e2da]/80 dark:border-[#292b34]/80 bg-[#f8f6f1]/60 dark:bg-[#141519]/60 p-2 flex flex-col justify-between min-h-[70px]"
+                    >
+                      <div className="flex items-center justify-between pb-1 border-b border-[#e5e2da]/40 dark:border-[#292b34]/40 mb-1.5">
+                        <span className="text-[11px] font-bold text-[#1f2126] dark:text-[#eceef2] flex items-center gap-1">
+                          <Layers className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                          {dayPart}
+                        </span>
+                        <span className="text-[9px] text-[#8c909c] font-medium">
+                          {cellTasks.length} {cellTasks.length === 1 ? 'task' : 'tasks'}
+                        </span>
+                      </div>
+
+                      {/* Tasks in this dayPart */}
+                      <div className="space-y-1.5 flex-1">
+                        {cellTasks.length === 0 ? (
+                          <div className="py-1 text-center text-[10px] text-[#8c909c] italic">
+                            No tasks
+                          </div>
+                        ) : (
+                          cellTasks.map((task) => {
+                            const subj = getSubject(task.subjectId);
+                            const isSelected = selectedTaskIds.has(task.id);
+
+                            return (
+                              <div
+                                key={task.id}
+                                className={`flex items-start justify-between gap-1.5 p-1.5 rounded-lg border transition-all ${
+                                  isSelected
+                                    ? 'border-blue-500 ring-1 ring-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30'
+                                    : task.isCompleted
+                                    ? 'bg-[#f4f2ec]/60 dark:bg-[#15161a] border-[#e5e2da] dark:border-[#292b34] opacity-60'
+                                    : 'bg-[#fdfcf9] dark:bg-[#1a1b20] border-[#e5e2da] dark:border-[#292b34]'
+                                }`}
+                              >
+                                <div className="flex items-start gap-1 flex-1 min-w-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTaskComplete(task.id)}
+                                    className="p-1 text-[#8c909c] hover:text-emerald-600 transition-colors shrink-0 cursor-pointer"
+                                    aria-label={task.isCompleted ? 'Mark incomplete' : 'Mark done'}
+                                  >
+                                    {task.isCompleted ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    ) : (
+                                      <Circle className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+
+                                  <div
+                                    className="flex-1 min-w-0 cursor-pointer pt-0.5"
+                                    onClick={() => {
+                                      setTaskToEdit(task);
+                                      setIsTaskModalOpen(true);
+                                    }}
+                                  >
+                                    <div
+                                      className={`text-[11px] font-medium leading-snug break-words ${
+                                        task.isCompleted
+                                          ? 'line-through text-[#8c909c] dark:text-[#727784]'
+                                          : 'text-[#1f2126] dark:text-[#eceef2]'
+                                      }`}
+                                    >
+                                      {task.title}
+                                    </div>
+                                    {subj && (
+                                      <span
+                                        className="inline-block mt-0.5 px-1 py-0.2 text-[8px] font-bold rounded"
+                                        style={{
+                                          backgroundColor: `${subj.color}20`,
+                                          color: subj.color,
+                                        }}
+                                      >
+                                        {subj.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setMovingTask(task)}
+                                  className="p-1 text-[#8c909c] hover:text-blue-600 rounded transition-colors shrink-0 cursor-pointer"
+                                  title="Move task"
+                                  aria-label="Shift task"
+                                >
+                                  <MoveRight className="w-3 h-3" />
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Quick add to this dayPart */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddTask(dateStr, dayPart)}
+                        className="w-full mt-1.5 py-0.5 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-blue-500 rounded text-[9px] text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-2.5 h-2.5" /> Add to {dayPart}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ========================================================= */}
+      {/* DESKTOP MATRIX TABLE VIEW (Wide layout on desktop only)   */}
+      {/* ========================================================= */}
+      <div className="hidden md:flex flex-1 flex-col min-h-0 min-w-0 p-2 sm:p-4 overflow-hidden">
+        {/* Dedicated Horizontal Side Scroll Slider - Visible only on PC/Desktop (Removed on Mobile and Touch Devices) */}
+        {!isMobileOrTouch && (
+          <div className="w-full shrink-0 mb-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[#fdfcf9] dark:bg-[#1a1b20] border border-[#e5e2da] dark:border-[#292b34] rounded-xl flex flex-col gap-1.5 shadow-2xs">
+            {/* Main Scrubber Control Row */}
+            <div className="flex items-center justify-between gap-1.5 sm:gap-3">
+              {/* Left Controls */}
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => jumpToSide('start')}
+                  disabled={!canScrollLeft}
+                  className="hidden sm:flex px-2.5 py-1 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold items-center gap-0.5 transition-colors cursor-pointer text-[#1f2126] dark:text-[#eceef2]"
+                  title="Jump to Start (Left)"
+                >
+                  <ChevronsLeft className="w-3.5 h-3.5" />
+                  <span>Start</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => sideScroll('left')}
+                  disabled={!canScrollLeft}
+                  className="p-1 px-1.5 sm:py-1 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold flex items-center transition-colors cursor-pointer text-[#1f2126] dark:text-[#eceef2]"
+                  title="Scroll Left"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline ml-0.5">Left</span>
+                </button>
+              </div>
+
+              {/* Slider Control */}
+              <div className="flex-1 max-w-xl flex items-center gap-1.5 sm:gap-2.5 mx-auto min-w-0">
+                <span className="text-[11px] font-bold text-[#606470] dark:text-[#9aa0ae] shrink-0 select-none hidden sm:flex items-center gap-1">
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>Slider:</span>
+                </span>
+                <span className="text-[10px] text-[#8c909c] hidden sm:inline select-none">Start</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={scrollPercent}
+                  onInput={handleSliderChange}
+                  onChange={handleSliderChange}
+                  aria-label="Horizontal scroll slider"
+                  className="flex-1 min-w-[60px] h-2.5 bg-[#e5e2da] dark:bg-[#292b34] rounded-lg appearance-none cursor-ew-resize accent-blue-600 hover:accent-blue-700 active:accent-blue-800 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  title={`Drag slider to view other side: ${scrollPercent}%`}
+                />
+                <span className="text-[10px] text-[#8c909c] hidden sm:inline select-none">Other Side</span>
+                <span className="text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400 w-7 sm:w-9 text-right tabular-nums shrink-0">
+                  {scrollPercent}%
+                </span>
+              </div>
+
+              {/* Right Controls */}
+              <div className="flex items-center gap-1 shrink-0">
+                {visibleDays.includes(todayStr) && (
+                  <button
+                    type="button"
+                    onClick={scrollToToday}
+                    className="px-2 py-1 rounded-lg border border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                    title="Jump to Today's date"
+                  >
+                    <Calendar className="w-3 h-3" />
+                    <span>Today</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => sideScroll('right')}
+                  disabled={!canScrollRight}
+                  className="p-1 px-1.5 sm:py-1 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold flex items-center transition-colors cursor-pointer text-[#1f2126] dark:text-[#eceef2]"
+                  title="Scroll Right"
+                >
+                  <span className="hidden sm:inline mr-0.5">Right</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => jumpToSide('end')}
+                  disabled={!canScrollRight}
+                  className="px-2 sm:px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:bg-blue-400 disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-bold flex items-center gap-0.5 transition-colors shadow-2xs cursor-pointer"
+                  title="Jump to Other Side (Right)"
+                >
+                  <span className="hidden sm:inline">Other Side</span>
+                  <span className="sm:hidden text-[10px]">End</span>
+                  <ChevronsRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Column Jump Pills */}
+            {matrixOrientation === 'days-on-left' && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 pt-1.5 border-t border-[#e5e2da]/60 dark:border-[#292b34]/60 scrollbar-none">
+                <span className="text-[10px] font-bold text-[#8c909c] shrink-0 mr-0.5 flex items-center gap-1">
+                  <Layers className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                  <span>Jump:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => jumpToSide('start')}
+                  className="px-2 py-0.5 rounded-md bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] border border-[#e5e2da] dark:border-[#292b34] text-[10px] font-bold text-[#1f2126] dark:text-[#eceef2] shrink-0 transition-colors cursor-pointer active:scale-95"
+                >
+                  All
+                </button>
+                {dayParts.map((part) => {
+                  const partTasksCount = filteredTasks.filter((t) => t.dayPart === part).length;
+                  return (
+                    <button
+                      key={part}
+                      type="button"
+                      onClick={() => scrollToDayPart(part)}
+                      className="px-2.5 py-0.5 rounded-md bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] border border-[#e5e2da] dark:border-[#292b34] text-[10px] font-semibold text-[#1f2126] dark:text-[#eceef2] shrink-0 flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
+                    >
+                      <span>{part}</span>
+                      <span className="text-[9px] text-[#8c909c]">({partTasksCount})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="relative flex-1 min-h-0 min-w-0 w-full group/matrix">
           <div
             id="planner-matrix-scroll"
             ref={matrixScrollRef}
-            className="h-full w-full max-w-full overflow-x-auto overflow-y-auto border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs scrollbar-thin"
+            className="h-full w-full max-w-full overflow-x-auto overflow-y-auto border border-[#e5e2da] dark:border-[#292b34] rounded-xl sm:rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs scrollbar-thin select-none"
+            style={{
+              WebkitOverflowScrolling: 'touch',
+            }}
           >
-              <table className="border-collapse table-auto min-w-full text-left">
+              <table className="border-separate border-spacing-0 table-auto min-w-full text-left">
                 {/* ========================================================= */}
                 {/* DAYS ON LEFT (ROWS), DAY-PARTS AT TOP (COLUMNS)           */}
                 {/* User explicit request: Days name in left side vertically, */}
@@ -1144,13 +1474,17 @@ export function PlannerView() {
                 {matrixOrientation === 'days-on-left' ? (
                   <>
                     {/* Table Header: Day-Parts across the top */}
-                    <thead onWheel={handleHeaderWheel}>
-                    <tr className="border-b border-[#e5e2da] dark:border-[#292b34]">
+                    <thead>
+                    <tr>
                       {/* Top-left Corner Cell: Sticky in both horizontal & vertical scroll */}
-                      <th className="sticky top-0 left-0 z-30 w-44 min-w-[170px] max-w-[170px] p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] uppercase tracking-wider shadow-[2px_2px_4px_rgba(0,0,0,0.04)]">
-                        <div className="flex items-center justify-between">
+                      <th className="sticky top-0 left-0 z-30 w-16 sm:w-44 min-w-[66px] sm:min-w-[170px] max-w-[70px] sm:max-w-[170px] p-1.5 sm:p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-b border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] uppercase tracking-wider shadow-[2px_2px_4px_rgba(0,0,0,0.04)]">
+                        <div className="hidden sm:flex items-center justify-between">
                           <span className="font-bold text-[#1f2126] dark:text-[#eceef2]">Days</span>
                           <span className="text-[10px] text-[#8c909c] font-normal">Parts →</span>
+                        </div>
+                        <div className="sm:hidden text-center">
+                          <span className="font-bold text-[10px] text-[#1f2126] dark:text-[#eceef2] block">Days</span>
+                          <span className="text-[8px] text-[#8c909c] font-normal">→</span>
                         </div>
                       </th>
 
@@ -1160,7 +1494,8 @@ export function PlannerView() {
                         return (
                           <th
                             key={dayPart}
-                            className="sticky top-0 z-20 w-64 min-w-[210px] p-3 border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] select-none shadow-[0_2px_4px_rgba(0,0,0,0.04)]"
+                            data-daypart-header={dayPart}
+                            className="sticky top-0 z-20 w-44 sm:w-64 min-w-[160px] sm:min-w-[210px] p-2 sm:p-3 border-b border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] select-none shadow-[0_2px_4px_rgba(0,0,0,0.04)]"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 font-bold text-xs text-[#1f2126] dark:text-[#eceef2]">
@@ -1178,7 +1513,7 @@ export function PlannerView() {
                   </thead>
 
                   {/* Table Body: Days down the left side vertically (as rows) */}
-                  <tbody className="divide-y divide-[#e5e2da] dark:divide-[#292b34]">
+                  <tbody>
                     {days.map((dateStr) => {
                       const dayTasks = filteredTasks.filter((t) => t.date === dateStr);
                       const doneCount = dayTasks.filter((t) => t.isCompleted).length;
@@ -1190,14 +1525,15 @@ export function PlannerView() {
                           <td
                             data-matrix-header-date={dateStr}
                             onClick={() => setSelectedDayForDetail(dateStr)}
-                            className={`sticky left-0 z-10 w-44 min-w-[170px] max-w-[170px] p-3.5 border-r border-[#e5e2da] dark:border-[#292b34] align-top cursor-pointer transition-colors select-none shadow-[2px_0_4px_rgba(0,0,0,0.04)] ${
+                            className={`sticky left-0 z-10 w-16 sm:w-44 min-w-[66px] sm:min-w-[170px] max-w-[70px] sm:max-w-[170px] p-1 sm:p-3.5 border-b border-r border-[#e5e2da] dark:border-[#292b34] align-top cursor-pointer transition-colors select-none shadow-[2px_0_4px_rgba(0,0,0,0.04)] ${
                               isCurrent
                                 ? 'bg-[#edf4ff] dark:bg-[#1a2333] hover:bg-[#e2edff] dark:hover:bg-[#202b3f]'
                                 : 'bg-[#f8f6f1] dark:bg-[#16171b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36]'
                             }`}
                             title="Click to view full day schedule"
                           >
-                            <div>
+                            {/* Desktop layout */}
+                            <div className="hidden sm:block">
                               <div className="flex items-center justify-between">
                                 <span
                                   className={`text-xs font-bold uppercase tracking-wider ${
@@ -1229,6 +1565,33 @@ export function PlannerView() {
                                 </span>
                               </div>
                             </div>
+
+                            {/* Mobile compact badge layout */}
+                            <div className="sm:hidden text-center flex flex-col items-center py-1">
+                              <span
+                                className={`text-[10px] font-extrabold uppercase tracking-tight ${
+                                  isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-[#1f2126] dark:text-[#eceef2]'
+                                }`}
+                              >
+                                {getWeekdayName(dateStr).slice(0, 3)}
+                              </span>
+                              <span className="text-[11px] font-bold text-[#1f2126] dark:text-[#eceef2] leading-tight">
+                                {formatShortDate(dateStr)}
+                              </span>
+                              {isCurrent && (
+                                <span className="mt-0.5 px-1 py-0.2 text-[8px] font-bold bg-blue-600 text-white rounded">
+                                  Today
+                                </span>
+                              )}
+                              {!isCurrent && dateStr < todayStr && isDayCompletedPastDay(dateStr) && (
+                                <span className="mt-0.5 px-1 py-0.2 text-[8px] font-semibold bg-emerald-600/15 text-emerald-700 dark:text-emerald-400 rounded">
+                                  Done
+                                </span>
+                              )}
+                              <span className="text-[9px] text-[#8c909c] font-semibold mt-1 tabular-nums">
+                                {doneCount}/{dayTasks.length}
+                              </span>
+                            </div>
                           </td>
 
                           {/* Day-Part Cells in this Day's row */}
@@ -1240,10 +1603,10 @@ export function PlannerView() {
                             return (
                               <td
                                 key={`${dateStr}-${dayPart}`}
-                                onDragOver={(e) => handleDragOverCell(e, dateStr, dayPart)}
-                                onDragLeave={(e) => handleDragLeaveCell(e, dateStr, dayPart)}
-                                onDrop={(e) => handleDropOnCell(e, dateStr, dayPart)}
-                                className={`w-64 min-w-[210px] p-2.5 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-all min-h-[110px] relative ${
+                                onDragOver={!isMobileOrTouch ? (e) => handleDragOverCell(e, dateStr, dayPart) : undefined}
+                                onDragLeave={!isMobileOrTouch ? (e) => handleDragLeaveCell(e, dateStr, dayPart) : undefined}
+                                onDrop={!isMobileOrTouch ? (e) => handleDropOnCell(e, dateStr, dayPart) : undefined}
+                                className={`w-44 sm:w-64 min-w-[160px] sm:min-w-[210px] p-1.5 sm:p-2.5 border-b border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-all min-h-[90px] relative ${
                                   dragOverCell?.date === dateStr && dragOverCell?.dayPart === dayPart
                                     ? 'ring-2 ring-blue-500 ring-inset bg-blue-500/10 dark:bg-blue-500/20 shadow-inner'
                                     : isCurrent
@@ -1259,18 +1622,18 @@ export function PlannerView() {
                                     return (
                                       <div
                                         key={task.id}
-                                        draggable={!isSelectionMode}
-                                        onDragStart={(e) => handleDragStart(e, task.id)}
-                                        onDragEnd={handleDragEnd}
+                                        draggable={!isMobileOrTouch && !isSelectionMode}
+                                        onDragStart={!isMobileOrTouch ? (e) => handleDragStart(e, task.id) : undefined}
+                                        onDragEnd={!isMobileOrTouch ? handleDragEnd : undefined}
                                         onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
                                         onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
                                         onTouchEnd={cancelHoldDetection}
                                         onTouchCancel={cancelHoldDetection}
                                         onMouseDown={(e) => {
-                                          if (e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
+                                          if (!isMobileOrTouch && e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
                                         }}
-                                        onMouseMove={(e) => handleTouchMoveDetection(e.clientX, e.clientY)}
-                                        onMouseUp={cancelHoldDetection}
+                                        onMouseMove={!isMobileOrTouch ? (e) => handleTouchMoveDetection(e.clientX, e.clientY) : undefined}
+                                        onMouseUp={!isMobileOrTouch ? cancelHoldDetection : undefined}
                                         onClick={() => {
                                           if (holdTriggeredRef.current) {
                                             holdTriggeredRef.current = false;
@@ -1280,7 +1643,7 @@ export function PlannerView() {
                                             toggleTaskSelection(task.id);
                                           }
                                         }}
-                                        className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none ${
+                                        className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none touch-pan-y ${
                                           draggedTaskId === task.id
                                             ? 'opacity-40 border-dashed border-blue-500 scale-[0.98]'
                                             : selectedTaskIds.has(task.id)
@@ -1288,10 +1651,10 @@ export function PlannerView() {
                                             : task.isCompleted
                                             ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                             : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
-                                        } ${!isSelectionMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                        } ${!isMobileOrTouch && !isSelectionMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                       >
-                                        {/* Grip Drag Handle Icon (visible in Grid view) */}
-                                        {!isSelectionMode && selectedTaskIds.size === 0 && (
+                                        {/* Grip Drag Handle Icon (visible on Desktop Grid) */}
+                                        {!isMobileOrTouch && !isSelectionMode && selectedTaskIds.size === 0 && (
                                           <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-60 transition-opacity shrink-0 mt-0.5" />
                                         )}
 
@@ -1422,6 +1785,20 @@ export function PlannerView() {
                                             </div>
                                           )}
                                         </div>
+
+                                        {/* Mobile Quick Move / Shift Button */}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setMovingTask(task);
+                                          }}
+                                          className="sm:hidden p-1 text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 active:bg-blue-50 dark:active:bg-blue-950/40 rounded transition-colors shrink-0 self-center"
+                                          title="Move task to another day-part"
+                                          aria-label="Shift task"
+                                        >
+                                          <MoveRight className="w-3 h-3" />
+                                        </button>
                                       </div>
                                     );
                                   })}
@@ -1438,7 +1815,7 @@ export function PlannerView() {
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAddTask(dateStr, dayPart)}
-                                  className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-70 hover:opacity-100 transition-all min-h-[30px]"
+                                  className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] active:bg-blue-500/10 rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-75 hover:opacity-100 transition-all min-h-[28px] cursor-pointer"
                                 >
                                   <Plus className="w-3 h-3" /> Add
                                 </button>
@@ -1455,9 +1832,9 @@ export function PlannerView() {
                 /* OPTION B: DAYS ON TOP (COLUMNS), DAY-PARTS ON LEFT (ROWS) */
                 /* ========================================================= */
                 <>
-                  <thead onWheel={handleHeaderWheel}>
-                    <tr className="border-b border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b]">
-                      <th className="w-36 sm:w-44 p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-r border-[#e5e2da] dark:border-[#292b34] uppercase tracking-wider">
+                  <thead>
+                    <tr>
+                      <th className="sticky top-0 left-0 z-30 w-28 sm:w-44 p-2 sm:p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-b border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] uppercase tracking-wider shadow-[2px_2px_4px_rgba(0,0,0,0.04)]">
                         <div className="flex items-center justify-between">
                           <span>Day-Parts</span>
                           <span className="text-[10px] text-[#8c909c]">↘ Days</span>
@@ -1474,7 +1851,7 @@ export function PlannerView() {
                             key={dateStr}
                             data-matrix-header-date={dateStr}
                             onClick={() => setSelectedDayForDetail(dateStr)}
-                            className={`p-3 border-r border-[#e5e2da] dark:border-[#292b34] cursor-pointer transition-colors group select-none min-w-[160px] ${
+                            className={`sticky top-0 z-20 p-2 sm:p-3 border-b border-r border-[#e5e2da] dark:border-[#292b34] cursor-pointer transition-colors group select-none min-w-[140px] sm:min-w-[160px] bg-[#f4f2ec] dark:bg-[#22242b] shadow-[0_2px_4px_rgba(0,0,0,0.04)] ${
                               isCurrent
                                 ? 'bg-blue-500/10 hover:bg-blue-500/15'
                                 : 'hover:bg-[#eae7df] dark:hover:bg-[#2a2d36]'
@@ -1517,11 +1894,11 @@ export function PlannerView() {
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-[#e5e2da] dark:border-[#292b34]">
+                  <tbody>
                     {dayParts.map((dayPart) => (
                       <tr key={dayPart} className="group">
-                        <td className="p-3 border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f8f6f1] dark:bg-[#16171b] align-top">
-                          <div className="sticky left-0">
+                        <td className="sticky left-0 z-10 p-2 sm:p-3 border-b border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f8f6f1] dark:bg-[#16171b] align-top shadow-[2px_0_4px_rgba(0,0,0,0.04)]">
+                          <div>
                             <div className="flex items-center gap-1.5 font-bold text-xs text-[#1f2126] dark:text-[#eceef2]">
                               <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                               <span>{dayPart}</span>
@@ -1540,10 +1917,10 @@ export function PlannerView() {
                           return (
                             <td
                               key={`${dateStr}-${dayPart}`}
-                              onDragOver={(e) => handleDragOverCell(e, dateStr, dayPart)}
-                              onDragLeave={(e) => handleDragLeaveCell(e, dateStr, dayPart)}
-                              onDrop={(e) => handleDropOnCell(e, dateStr, dayPart)}
-                              className={`p-2 border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-all min-h-[110px] relative ${
+                              onDragOver={!isMobileOrTouch ? (e) => handleDragOverCell(e, dateStr, dayPart) : undefined}
+                              onDragLeave={!isMobileOrTouch ? (e) => handleDragLeaveCell(e, dateStr, dayPart) : undefined}
+                              onDrop={!isMobileOrTouch ? (e) => handleDropOnCell(e, dateStr, dayPart) : undefined}
+                              className={`p-1.5 sm:p-2 border-b border-r border-[#e5e2da] dark:border-[#292b34] align-top transition-all min-h-[90px] relative ${
                                 dragOverCell?.date === dateStr && dragOverCell?.dayPart === dayPart
                                   ? 'ring-2 ring-blue-500 ring-inset bg-blue-500/10 dark:bg-blue-500/20 shadow-inner'
                                   : isToday(dateStr)
@@ -1558,18 +1935,18 @@ export function PlannerView() {
                                   return (
                                     <div
                                       key={task.id}
-                                      draggable={!isSelectionMode}
-                                      onDragStart={(e) => handleDragStart(e, task.id)}
-                                      onDragEnd={handleDragEnd}
+                                      draggable={!isMobileOrTouch && !isSelectionMode}
+                                      onDragStart={!isMobileOrTouch ? (e) => handleDragStart(e, task.id) : undefined}
+                                      onDragEnd={!isMobileOrTouch ? handleDragEnd : undefined}
                                       onTouchStart={(e) => startHoldDetection(task.id, e.touches[0].clientX, e.touches[0].clientY)}
                                       onTouchMove={(e) => handleTouchMoveDetection(e.touches[0].clientX, e.touches[0].clientY)}
                                       onTouchEnd={cancelHoldDetection}
                                       onTouchCancel={cancelHoldDetection}
                                       onMouseDown={(e) => {
-                                        if (e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
+                                        if (!isMobileOrTouch && e.button === 0) startHoldDetection(task.id, e.clientX, e.clientY);
                                       }}
-                                      onMouseMove={(e) => handleTouchMoveDetection(e.clientX, e.clientY)}
-                                      onMouseUp={cancelHoldDetection}
+                                      onMouseMove={!isMobileOrTouch ? (e) => handleTouchMoveDetection(e.clientX, e.clientY) : undefined}
+                                      onMouseUp={!isMobileOrTouch ? cancelHoldDetection : undefined}
                                       onClick={() => {
                                         if (holdTriggeredRef.current) {
                                           holdTriggeredRef.current = false;
@@ -1579,7 +1956,7 @@ export function PlannerView() {
                                           toggleTaskSelection(task.id);
                                         }
                                       }}
-                                      className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none ${
+                                      className={`group/task relative flex items-start gap-1.5 p-2 rounded-lg border bg-[#fdfcf9] dark:bg-[#202127] shadow-2xs hover:shadow-xs transition-all select-none touch-pan-y ${
                                         draggedTaskId === task.id
                                           ? 'opacity-40 border-dashed border-blue-500 scale-[0.98]'
                                           : selectedTaskIds.has(task.id)
@@ -1587,10 +1964,10 @@ export function PlannerView() {
                                           : task.isCompleted
                                           ? 'border-[#e5e2da] dark:border-[#292b34] opacity-60'
                                           : 'border-[#e5e2da] dark:border-[#2f313c] hover:border-[#cfcbc2]'
-                                      } ${!isSelectionMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                      } ${!isMobileOrTouch && !isSelectionMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                     >
-                                      {/* Grip Drag Handle Icon (visible in Grid view) */}
-                                      {!isSelectionMode && selectedTaskIds.size === 0 && (
+                                      {/* Grip Drag Handle Icon (visible on Desktop Grid) */}
+                                      {!isMobileOrTouch && !isSelectionMode && selectedTaskIds.size === 0 && (
                                         <GripVertical className="w-3 h-3 text-[#8c909c] opacity-0 group-hover/task:opacity-60 transition-opacity shrink-0 mt-0.5" />
                                       )}
 
@@ -1718,6 +2095,20 @@ export function PlannerView() {
                                           </div>
                                         )}
                                       </div>
+
+                                      {/* Mobile Quick Move / Shift Button */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setMovingTask(task);
+                                        }}
+                                        className="sm:hidden p-1 text-[#8c909c] hover:text-blue-600 dark:hover:text-blue-400 active:bg-blue-50 dark:active:bg-blue-950/40 rounded transition-colors shrink-0 self-center"
+                                        title="Move task to another section or date"
+                                        aria-label="Shift task"
+                                      >
+                                        <MoveRight className="w-3 h-3" />
+                                      </button>
                                     </div>
                                   );
                                 })}
@@ -1733,7 +2124,7 @@ export function PlannerView() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenAddTask(dateStr, dayPart)}
-                                className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-70 hover:opacity-100 transition-all min-h-[30px]"
+                                className="w-full mt-2 py-1 border border-dashed border-[#e5e2da] dark:border-[#292b34] hover:border-[#8c909c] active:bg-blue-500/10 rounded-md text-[10px] text-[#8c909c] hover:text-[#1f2126] dark:hover:text-[#eceef2] flex items-center justify-center gap-1 opacity-75 hover:opacity-100 transition-all min-h-[28px] cursor-pointer"
                               >
                                 <Plus className="w-3.5 h-3.5" /> Add
                               </button>
