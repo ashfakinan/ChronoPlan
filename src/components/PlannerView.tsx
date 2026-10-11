@@ -8,6 +8,9 @@ import {
   Settings,
   Layers,
   ChevronRight,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
   LayoutGrid,
   CalendarDays,
   MoveRight,
@@ -89,6 +92,12 @@ export function PlannerView() {
     setZoom(newZoom);
     localStorage.setItem('planner_zoom', String(newZoom));
   };
+
+  // Manual Side Scroll state & controls for PC / Desktop
+  const matrixScrollRef = React.useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [scrollPercent, setScrollPercent] = useState(0);
 
   // Touch and hold (long press) detection for task selection
   const holdTimerRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -343,6 +352,84 @@ export function PlannerView() {
     return activePlanner?.dayParts || ['Morning', 'Afternoon', 'Evening', 'Night', 'Self Study'];
   }, [activePlanner]);
 
+  const updateScrollState = React.useCallback(() => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    setCanScrollLeft(el.scrollLeft > 8);
+    setCanScrollRight(maxScroll > 8 && el.scrollLeft < maxScroll - 8);
+    if (maxScroll > 0) {
+      setScrollPercent(Math.round((el.scrollLeft / maxScroll) * 100));
+    } else {
+      setScrollPercent(0);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    updateScrollState();
+    el.addEventListener('scroll', updateScrollState, { passive: true });
+    window.addEventListener('resize', updateScrollState);
+
+    const observer = new ResizeObserver(() => {
+      updateScrollState();
+    });
+    observer.observe(el);
+
+    return () => {
+      el.removeEventListener('scroll', updateScrollState);
+      window.removeEventListener('resize', updateScrollState);
+      observer.disconnect();
+    };
+  }, [days, dayParts, matrixOrientation, zoom, updateScrollState]);
+
+  const sideScroll = (direction: 'left' | 'right', amount?: number) => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const delta = amount ?? Math.max(280, Math.floor(el.clientWidth * 0.55));
+    el.scrollBy({
+      left: direction === 'left' ? -delta : delta,
+      behavior: 'smooth',
+    });
+  };
+
+  const jumpToSide = (side: 'start' | 'end') => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    el.scrollTo({
+      left: side === 'start' ? 0 : el.scrollWidth,
+      behavior: 'smooth',
+    });
+  };
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const pct = Number(e.target.value);
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    el.scrollTo({
+      left: (pct / 100) * maxScroll,
+      behavior: 'auto',
+    });
+    setScrollPercent(pct);
+  };
+
+  const scrollToToday = () => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const todayEl = el.querySelector(`[data-matrix-header-date="${todayStr}"]`) as HTMLElement;
+    if (todayEl) {
+      todayEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  };
+
+  const handleHeaderWheel = (e: React.WheelEvent) => {
+    if (e.deltaY !== 0 && matrixScrollRef.current) {
+      matrixScrollRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
   // Tasks belonging to this planner
   const plannerTasks = useMemo(() => {
     if (!activePlanner) return [];
@@ -560,6 +647,37 @@ export function PlannerView() {
 
           {/* Zoom Controller (Max 50% Zoom Out) */}
           <ZoomController zoom={zoom} onZoomChange={handleZoomChange} />
+
+          {/* Quick Side Scroll in Toolbar (PC / Desktop) */}
+          <div className="hidden lg:flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] min-h-[34px]">
+            <button
+              type="button"
+              onClick={() => sideScroll('left')}
+              disabled={!canScrollLeft}
+              className="p-1.5 rounded-md hover:bg-[#fdfcf9] dark:hover:bg-[#1a1b20] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-pointer"
+              title="Side scroll left (or hold Shift + Wheel)"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => jumpToSide(scrollPercent > 50 ? 'start' : 'end')}
+              className="px-2 py-1 text-xs font-semibold text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] transition-colors cursor-pointer flex items-center gap-1"
+              title={scrollPercent > 50 ? 'Jump to Start (Left)' : 'Jump to Other Side (Right)'}
+            >
+              <ArrowLeftRight className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+              <span>Side Scroll</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => sideScroll('right')}
+              disabled={!canScrollRight}
+              className="p-1.5 rounded-md hover:bg-[#fdfcf9] dark:hover:bg-[#1a1b20] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[#606470] dark:text-[#9aa0ae] hover:text-[#1f2126] dark:hover:text-[#eceef2] cursor-pointer"
+              title="Side scroll right / to other side"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
           {/* Manage Subjects */}
           <button
@@ -928,20 +1046,130 @@ export function PlannerView() {
       {/* MATRIX TABLE VIEW (Days on Left vertically, Day-Parts horizontally at top) */}
       <div className={`flex-1 overflow-auto p-2 sm:p-4 ${mobileViewMode === 'matrix' ? 'block' : 'hidden md:block'}`}>
         <div className="inline-block min-w-full align-top">
-          <div
-            id="planner-matrix-scroll"
-            className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-auto max-h-[calc(100vh-12rem)]"
-          >
-            <table className="border-collapse table-auto min-w-full text-left">
-              {/* ========================================================= */}
-              {/* DAYS ON LEFT (ROWS), DAY-PARTS AT TOP (COLUMNS)           */}
-              {/* User explicit request: Days name in left side vertically, */}
-              {/* and parts name horizontally at the top!                   */}
-              {/* ========================================================= */}
-              {matrixOrientation === 'days-on-left' ? (
-                <>
-                  {/* Table Header: Day-Parts across the top */}
-                  <thead>
+          {/* Manual Side Scroll Bar for PC / Tablet */}
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 mb-2.5 bg-[#fdfcf9] dark:bg-[#1a1b20] border border-[#e5e2da] dark:border-[#292b34] rounded-xl text-xs shadow-2xs">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="font-bold text-[11px] text-[#1f2126] dark:text-[#eceef2] flex items-center gap-1 mr-1">
+                <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="hidden sm:inline">Side Scroll</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => jumpToSide('start')}
+                disabled={!canScrollLeft}
+                className="px-2 py-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-medium flex items-center gap-0.5 transition-colors cursor-pointer"
+                title="Jump to Start (Far Left)"
+              >
+                <ChevronsLeft className="w-3 h-3" />
+                <span className="hidden sm:inline">Start</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => sideScroll('left')}
+                disabled={!canScrollLeft}
+                className="px-2.5 py-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-medium flex items-center gap-0.5 transition-colors cursor-pointer"
+                title="Scroll Left (or hold Shift + Wheel)"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                <span>Left</span>
+              </button>
+            </div>
+
+            {/* Interactive Progress Scrubber / Slider */}
+            <div className="flex-1 max-w-xs sm:max-w-md mx-2 flex items-center gap-2">
+              <span className="text-[10px] text-[#8c909c] hidden md:inline">Left</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={scrollPercent}
+                onChange={handleSliderChange}
+                aria-label="Side scroll position scrubber"
+                className="flex-1 h-1.5 bg-[#e5e2da] dark:bg-[#292b34] rounded-lg appearance-none cursor-pointer accent-blue-600"
+                title={`Drag to side-scroll: ${scrollPercent}%`}
+              />
+              <span className="text-[10px] text-[#8c909c] hidden md:inline">Other Side</span>
+              <span className="text-[10px] font-bold text-[#606470] dark:text-[#9aa0ae] w-7 text-right tabular-nums">
+                {scrollPercent}%
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {visibleDays.includes(todayStr) && matrixOrientation === 'days-on-top' && (
+                <button
+                  type="button"
+                  onClick={scrollToToday}
+                  className="px-2 py-0.5 rounded-lg border border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30 hover:bg-blue-100 text-[11px] font-semibold transition-colors cursor-pointer"
+                  title="Scroll horizontally to Today"
+                >
+                  Today
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => sideScroll('right')}
+                disabled={!canScrollRight}
+                className="px-2.5 py-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] hover:bg-[#eae7df] dark:hover:bg-[#2a2d36] disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-medium flex items-center gap-0.5 transition-colors cursor-pointer"
+                title="Scroll Right"
+              >
+                <span>Right</span>
+                <ChevronRight className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToSide('end')}
+                disabled={!canScrollRight}
+                className="px-2.5 py-0.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:bg-blue-400 disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-bold flex items-center gap-0.5 transition-colors shadow-2xs cursor-pointer"
+                title="Jump to Other Side (Far Right)"
+              >
+                <span>Other Side</span>
+                <ChevronsRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="relative group/matrix">
+            {/* Floating Left Scroll Button on Left Edge (PC / Desktop) */}
+            {canScrollLeft && (
+              <button
+                type="button"
+                onClick={() => sideScroll('left')}
+                className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-30 p-2.5 rounded-full bg-white/95 dark:bg-[#1a1b20]/95 backdrop-blur-md border border-[#e5e2da] dark:border-[#292b34] shadow-xl text-[#1f2126] dark:text-[#eceef2] hover:bg-blue-600 hover:text-white hover:border-blue-600 hover:scale-110 active:scale-95 transition-all cursor-pointer items-center justify-center opacity-85 hover:opacity-100"
+                title="Scroll Left"
+                aria-label="Scroll Left"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+
+            {/* Floating Right Scroll Button on Right Edge (PC / Desktop) */}
+            {canScrollRight && (
+              <button
+                type="button"
+                onClick={() => sideScroll('right')}
+                className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-30 p-2.5 rounded-full bg-white/95 dark:bg-[#1a1b20]/95 backdrop-blur-md border border-[#e5e2da] dark:border-[#292b34] shadow-xl text-[#1f2126] dark:text-[#eceef2] hover:bg-blue-600 hover:text-white hover:border-blue-600 hover:scale-110 active:scale-95 transition-all cursor-pointer items-center justify-center opacity-85 hover:opacity-100"
+                title="Scroll to Other Side"
+                aria-label="Scroll to Other Side"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            )}
+
+            <div
+              id="planner-matrix-scroll"
+              ref={matrixScrollRef}
+              className="border border-[#e5e2da] dark:border-[#292b34] rounded-2xl bg-[#fdfcf9] dark:bg-[#1a1b20] shadow-xs overflow-auto max-h-[calc(100vh-12rem)] scroll-smooth scrollbar-thin"
+            >
+              <table className="border-collapse table-auto min-w-full text-left">
+                {/* ========================================================= */}
+                {/* DAYS ON LEFT (ROWS), DAY-PARTS AT TOP (COLUMNS)           */}
+                {/* User explicit request: Days name in left side vertically, */}
+                {/* and parts name horizontally at the top!                   */}
+                {/* ========================================================= */}
+                {matrixOrientation === 'days-on-left' ? (
+                  <>
+                    {/* Table Header: Day-Parts across the top */}
+                    <thead onWheel={handleHeaderWheel}>
                     <tr className="border-b border-[#e5e2da] dark:border-[#292b34]">
                       {/* Top-left Corner Cell: Sticky in both horizontal & vertical scroll */}
                       <th className="sticky top-0 left-0 z-30 w-44 min-w-[170px] max-w-[170px] p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-r border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b] uppercase tracking-wider shadow-[2px_2px_4px_rgba(0,0,0,0.04)]">
@@ -1252,7 +1480,7 @@ export function PlannerView() {
                 /* OPTION B: DAYS ON TOP (COLUMNS), DAY-PARTS ON LEFT (ROWS) */
                 /* ========================================================= */
                 <>
-                  <thead>
+                  <thead onWheel={handleHeaderWheel}>
                     <tr className="border-b border-[#e5e2da] dark:border-[#292b34] bg-[#f4f2ec] dark:bg-[#22242b]">
                       <th className="w-36 sm:w-44 p-3 font-semibold text-xs text-[#606470] dark:text-[#9aa0ae] border-r border-[#e5e2da] dark:border-[#292b34] uppercase tracking-wider">
                         <div className="flex items-center justify-between">
@@ -1545,6 +1773,7 @@ export function PlannerView() {
             </table>
           </div>
         </div>
+      </div>
       </div>
       </div>
 
