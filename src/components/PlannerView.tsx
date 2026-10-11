@@ -97,9 +97,6 @@ export function PlannerView() {
     localStorage.setItem('planner_zoom', String(clamped));
   };
 
-  // Mobile Grid layout density/mode: 'cards' (spacious multi-column schedule cards, default) vs 'matrix' (side-by-side table)
-  const [mobileGridLayout, setMobileGridLayout] = useState<'matrix' | 'cards'>('cards');
-
   // Two-thumb pinch to zoom gesture (both thumbs inward = zoom out, outward = zoom in)
   const pinchContainerRef = React.useRef<HTMLDivElement>(null);
   const pinchStartDistRef = React.useRef<number | null>(null);
@@ -1269,34 +1266,6 @@ export function PlannerView() {
             </div>
 
             <div className="flex items-center gap-1.5">
-              {/* Layout Density Switcher: Table vs Roomy Cards */}
-              <div className="flex items-center bg-[#f4f2ec] dark:bg-[#22242b] p-0.5 rounded-lg border border-[#e5e2da] dark:border-[#292b34] text-[10px]">
-                <button
-                  type="button"
-                  onClick={() => setMobileGridLayout('matrix')}
-                  className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer ${
-                    mobileGridLayout === 'matrix'
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-[#606470] dark:text-[#9aa0ae]'
-                  }`}
-                  title="Side-by-side Table Columns"
-                >
-                  Table
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMobileGridLayout('cards')}
-                  className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer ${
-                    mobileGridLayout === 'cards'
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-[#606470] dark:text-[#9aa0ae]'
-                  }`}
-                  title="Spacious Multi-Column Cards"
-                >
-                  Cards
-                </button>
-              </div>
-
               {/* Compact Zoom Controls on Mobile */}
               <ZoomController compact zoom={zoom} onZoomChange={handleZoomChange} />
 
@@ -1305,9 +1274,7 @@ export function PlannerView() {
                   type="button"
                   onClick={() => {
                     const el = document.getElementById(
-                      mobileGridLayout === 'matrix'
-                        ? `mobile-matrix-day-${todayStr}`
-                        : `mobile-card-day-${todayStr}`
+                      `mobile-card-day-${todayStr}`
                     );
                     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                   }}
@@ -1357,8 +1324,8 @@ export function PlannerView() {
           </div>
         </div>
 
-        {/* VIEW A: 2D Table Matrix (Comfortable columns with smooth horizontal panning) */}
-        {mobileGridLayout === 'matrix' ? (
+        {/* Mobile card schedule */}
+        {false ? (
           <div className="w-full flex-1 overflow-x-auto select-none">
             <table className="min-w-[620px] w-full border-collapse border-spacing-0">
               <thead>
