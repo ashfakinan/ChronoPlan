@@ -13,13 +13,11 @@ import {
   Layers,
   FileText,
   RefreshCw,
-  Shuffle,
   BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { usePlanner } from '../context/PlannerContext';
-import { useMadness } from '../context/MadnessContext';
 import { ActiveTab } from '../types';
 import { getTodayISO } from '../utils/dateUtils';
 import { PlannerModal } from './PlannerModal';
@@ -41,7 +39,6 @@ export function Navbar({ activeTab, setActiveTab, onOpenMobileSidebar }: NavbarP
     setShowMorningReport,
     todos,
   } = usePlanner();
-  const { pendingTasksCount: pendingMadnessTasks } = useMadness();
 
   const [isPlannerDropdownOpen, setIsPlannerDropdownOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);

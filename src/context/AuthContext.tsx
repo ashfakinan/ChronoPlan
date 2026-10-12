@@ -48,12 +48,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getRedirectResult(auth)
       .then((result) => {
         if (result?.user) {
-          console.log('Redirect sign-in successful:', result.user.email);
           setCurrentUser(result.user);
           setIsAuthModalOpen(false);
         }
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         console.warn('Redirect sign-in error:', err);
         handleAuthException(err);
       });
@@ -104,9 +103,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const handleAuthException = (err: any) => {
-    const code = err?.code || 'unknown';
-    const rawMessage = err?.message || String(err);
+  const handleAuthException = (err: unknown) => {
+    const authErr = err as { code?: string; message?: string } | null;
+    const code = authErr?.code || 'unknown';
+    const rawMessage = authErr?.message || String(err);
     const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'chrono-plan-alpha.vercel.app';
 
     let friendlyMessage = rawMessage;
@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Sign-in error:', err);
       handleAuthException(err);
       throw err;
@@ -153,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthError(null);
     try {
       await signInWithRedirect(auth, googleProvider);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Redirect sign-in error:', err);
       handleAuthException(err);
       throw err;
@@ -165,7 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await signInAnonymously(auth);
       setIsAuthModalOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('Anonymous sign in notice:', err);
       handleAuthException(err);
       throw err;

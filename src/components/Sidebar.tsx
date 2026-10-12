@@ -14,11 +14,9 @@ import {
   X,
   Trash2,
   Type,
-  Shuffle,
   BookOpen,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
-import { useMadness } from '../context/MadnessContext';
 import { NoteTag, ImportantNote, FixedSchedule, ActiveTab } from '../types';
 import { formatShortDate } from '../utils/dateUtils';
 import { NoteModal } from './NoteModal';
@@ -42,7 +40,6 @@ export function Sidebar({ isOpenOnMobile, onCloseMobile, setActiveTab }: Sidebar
     deleteSchedule,
     activePlanner,
   } = usePlanner();
-  const { pendingTasksCount: pendingMadnessTasks } = useMadness();
 
   const [activeTagFilter, setActiveTagFilter] = useState<string>('All');
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);

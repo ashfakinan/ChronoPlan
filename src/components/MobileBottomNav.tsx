@@ -5,12 +5,10 @@ import {
   BarChart3,
   CalendarDays,
   FileText,
-  Shuffle,
   BookOpen,
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { usePlanner } from '../context/PlannerContext';
-import { useMadness } from '../context/MadnessContext';
 import { getTodayISO } from '../utils/dateUtils';
 
 interface MobileBottomNavProps {
@@ -25,7 +23,6 @@ export function MobileBottomNav({
   onOpenMobileSidebar,
 }: MobileBottomNavProps) {
   const { todos, notes } = usePlanner();
-  const { pendingTasksCount: pendingMadnessTasks } = useMadness();
   const today = getTodayISO();
   const pendingTodosToday = todos.filter((t) => t.date === today && !t.isCompleted).length;
 

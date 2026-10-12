@@ -7,11 +7,9 @@ import { registerSW } from 'virtual:pwa-register';
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    console.log('ChronoPlan: New version available, updating assets...');
     updateSW(true);
   },
   onRegistered(r) {
-    console.log('ChronoPlan Service Worker registered:', r?.scope);
     if (r) {
       // Expose manual trigger for updates
       (window as unknown as { __chronoUpdateSW?: () => Promise<void> }).__chronoUpdateSW = async () => {

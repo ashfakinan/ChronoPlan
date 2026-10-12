@@ -116,4 +116,5 @@ export interface UserProfile {
   updatedAt?: string;
 }
 
+// Active tab identifiers ('madness' represents the Monthly Study Plan tab)
 export type ActiveTab = 'planner' | 'todos' | 'calendar' | 'analytics' | 'madness';

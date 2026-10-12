@@ -65,8 +65,9 @@ export function ScheduleModal({
         await createSchedule(trimmedName, text.trim(), timeRange.trim());
       }
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save schedule plan.');
+    } catch (err: unknown) {
+      const e = err as Error | null;
+      setError(e?.message || 'Failed to save schedule plan.');
     }
   };
 
@@ -75,8 +76,9 @@ export function ScheduleModal({
     try {
       await deleteSchedule(scheduleToEdit.id);
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to delete schedule plan.');
+    } catch (err: unknown) {
+      const e = err as Error | null;
+      setError(e?.message || 'Failed to delete schedule plan.');
     }
   };
 

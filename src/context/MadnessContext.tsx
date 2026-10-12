@@ -844,3 +844,9 @@ export function useMadness() {
   }
   return context;
 }
+
+// Consistent naming aliases for study plan
+export const StudyPlanFirestoreProvider = MadnessProvider;
+export const useStudyPlanFirestore = useMadness;
+export const StudyPlanProvider = MadnessProvider;
+export const useStudyPlan = useMadness;
